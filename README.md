@@ -1,5 +1,5 @@
 # DX11_portrait_orientation_swapchain
-This repository contains a minimal repro of an issue that prevents fullscreen swapchain (FSE) from presenting correctly on a Portrait orientation display
+This repository contains a minimal repro of an issue that prevents fullscreen swapchain (FSO) from presenting correctly on a Portrait orientation display
 
 Note that this is *not* production quality code by any stretch.
 It represents a simple minimal repro of an issue I'm having elsewhere. It does not pretend to follow any reasonable coding standard :)
