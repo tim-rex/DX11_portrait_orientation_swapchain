@@ -792,6 +792,21 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 }
 
                 swapchain->SetFullscreenState(DXGI_fullscreen, nullptr);
+
+
+
+                {
+                    ID3D11Texture2D* framebuffer;
+                    HRESULT result = swapchain->GetBuffer(0, IID_ID3D11Texture2D, (void**)&framebuffer);
+                    assert(SUCCEEDED(result));
+                    D3D11_TEXTURE2D_DESC framebufferSurfaceDesc;
+                    framebuffer->GetDesc(&framebufferSurfaceDesc);
+                    char msg[1024];
+                    snprintf(msg, 1024, "Framebuffer surface dimensions : %d x %d\n", framebufferSurfaceDesc.Width, framebufferSurfaceDesc.Height);
+                    OutputDebugStringA(msg);
+                    framebuffer->Release();
+                }
+
             }
             return 0;
 
