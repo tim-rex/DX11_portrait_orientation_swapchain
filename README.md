@@ -8,6 +8,10 @@ It represents a simple minimal repro of an issue I'm having elsewhere. It does n
 Load the solution (currently targets Visual Studio 2022)
 Build the solution
 
+Alternatively, grab a pre-built release (x64 only) from <a href="https://github.com/tim-rex/DX11_portrait_orientation_swapchain/releases">here</a>
+
+
+
 # Running
 1. Set your primary display to one that has portrait orientation
 2. Start debugging
