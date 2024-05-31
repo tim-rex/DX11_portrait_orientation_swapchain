@@ -17,6 +17,18 @@ Build the solution
 On my setup at least, the fullscreen swapchain on a portrait orientation display is incorrectly displayed.
 The image is vertically compressed and horizontally stretched, as if the width/height are flipped somewhere between the Present1() and the image hitting the display
 
+<table>
+  <tr>
+    <td>What it <b><i>should</i></b> look like</td>
+    <td>What it <b><i>actually</i></b> looks like (on my setup)</td>
+  </tr>
+  <tr>
+    <td><img width="403" alt="image" src="https://github.com/tim-rex/DX11_portrait_orientation_swapchain/assets/19639392/d511948f-80ed-44b7-81a3-83ebdfa46e4f"></td>
+    <td><img width="403" alt="image" src="https://github.com/tim-rex/DX11_portrait_orientation_swapchain/assets/19639392/c98f56e1-1471-42ab-91bd-89a02e4bdfa3"></td>
+  </tr>
+</table>
+
+
 Detailed write up here:
 https://stackoverflow.com/questions/78549082/dxgi-fullscreen-swapchain-rendering-incorrectly-on-portrait-orientation
 
