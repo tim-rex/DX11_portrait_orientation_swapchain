@@ -10,6 +10,7 @@ See <a href="https://github.com/tim-rex/DX11_portrait_orientation_swapchain/pull
 See the pull request notes for a deeper dive and discussion on wether or not this is a code issue, a documentation issue, or a DXGI issue.
 The PR will remain unmerged until we can get further clarity. In the meantime, borderless fullscreen should pose no such issue.. Alternatively we should also be exploring `DXGI_SWAP_CHAIN_FLAG_NONPREROTATED` regardless
 
+
 # Building
 Load the solution (currently targets Visual Studio 2022)
 Build the solution
@@ -39,6 +40,30 @@ The image is vertically compressed and horizontally stretched, as if the width/h
 </table>
 
 
+
+# Captures (RenderDoc + Pix)
+See the captures directory for RenderDoc and Pix captures.
+What's curious is that RenderDoc shows a framebuffer that matches what I would expect to see rendered.
+Pix shows a framebuffer that seems perhaps more in-line with what is shown on screen.
+While the reality of what is on-screen appears to lie somewhere between the two.
+
+Further, digging into the Pix capture it shows `ResourceBarrier` operation in the below image with Transition 0 showing the correct swapchain image, but Transition 1 showing the incorrect swapchain image
+
+Those transitions are defined in the command buffer like so:
+![image](https://github.com/tim-rex/DX11_portrait_orientation_swapchain/assets/19639392/cdc3d486-d179-4aad-a6b8-bfa53e4433e7)
+
+With the following result for each transition:
+
+**Transition 0**
+![image](https://github.com/tim-rex/DX11_portrait_orientation_swapchain/assets/19639392/5bfd7589-d830-40ff-a26b-80c3561b055a)
+
+**Transition 1**
+![image](https://github.com/tim-rex/DX11_portrait_orientation_swapchain/assets/19639392/b549dfaf-c257-46bc-9856-ec417ddca381)
+
+
+
+# The journey that got me here
+
 Detailed write up here:
 https://stackoverflow.com/questions/78549082/dxgi-fullscreen-swapchain-rendering-incorrectly-on-portrait-orientation
 
@@ -47,5 +72,4 @@ https://developercommunity.microsoft.com/t/DXGI-fullscreen-swapchain-rendering-i
 
 And then here:
 https://www.microsoft.com/en-us/windowsinsider/feedbackhub/fb?contextid=382&feedbackid=930634e6-62ed-4bb4-893e-817346f4c1d3&form=1&utm_source=product-placement&utm_medium=feedback-hub&utm_campaign=feedback-hub-redirect
-
 
