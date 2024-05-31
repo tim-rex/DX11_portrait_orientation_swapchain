@@ -4,6 +4,12 @@ This repository contains a minimal repro of an issue that prevents fullscreen sw
 Note that this is *not* production quality code by any stretch.
 It represents a simple minimal repro of an issue I'm having elsewhere. It does not pretend to follow any reasonable coding standard :)
 
+# Possible Fix
+See <a href="https://github.com/tim-rex/DX11_portrait_orientation_swapchain/pull/1">this</a> pull request, based directly from <a href="https://github.com/tim-rex/DX11_portrait_orientation_swapchain/tree/portrait_fullscreen_scaling_possible_fix">this</a> branch
+
+See the pull request notes for a deeper dive and discussion on wether or not this is a code issue, a documentation issue, or a DXGI issue.
+The PR will remain unmerged until we can get further clarity. In the meantime, borderless fullscreen should pose no such issue.. Alternatively we should also be exploring `DXGI_SWAP_CHAIN_FLAG_NONPREROTATED` regardless
+
 # Building
 Load the solution (currently targets Visual Studio 2022)
 Build the solution
