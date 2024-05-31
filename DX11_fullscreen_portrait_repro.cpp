@@ -199,7 +199,7 @@ void dxgi_debug_init()
 
 
             // NOTE: ApplicationMessage will not let us break
-            //debug_printf(LOGLEVEL_INFO, "This will not trigger??? Why?");
+            //OutputDebugStringA("This will not trigger??? Why?\n");
             //info->AddApplicationMessage(DXGI_INFO_QUEUE_MESSAGE_SEVERITY_ERROR, "TEST");
 
             // NOTE: Result message will let us break
@@ -276,7 +276,7 @@ void InitD3D11(void)
 
     if (result == E_INVALIDARG)
     {
-        OutputDebugStringA("Direct3D 11_1 device not available, trying again for 11_0");
+        OutputDebugStringA("Direct3D 11_1 device not available, trying again for 11_0\n");
 
         // https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-d3d11createdeviceandswapchain
         //    If you provide a D3D_FEATURE_LEVEL array that contains D3D_FEATURE_LEVEL_11_1 on a computer 
@@ -298,7 +298,7 @@ void InitD3D11(void)
 
     if (!SUCCEEDED(result))
     {
-        OutputDebugStringA("Failed D3D11CreateDevice");
+        OutputDebugStringA("Failed D3D11CreateDevice\n");
         exit(EXIT_FAILURE);
     }
 
@@ -307,21 +307,21 @@ void InitD3D11(void)
     result = device->QueryInterface(IID_IDXGIDevice4, (void**)&dxgiDevice4);
     if (!SUCCEEDED(result))
     {
-        OutputDebugStringA("Failed to query interface for dxgiDevice4");
+        OutputDebugStringA("Failed to query interface for dxgiDevice4\n");
         exit(EXIT_FAILURE);
     }
 
     result = dxgiDevice4->GetAdapter(&dxgiAdapter);
     if (!SUCCEEDED(result))
     {
-        OutputDebugStringA("Failed to get adapter from dxgiDevice4");
+        OutputDebugStringA("Failed to get adapter from dxgiDevice4\n");
         exit(EXIT_FAILURE);
     }
 
     result = dxgiAdapter->GetParent(IID_IDXGIFactory7, (void**)&factory);
     if (!SUCCEEDED(result))
     {
-        OutputDebugStringA("Failed to retrieve factor from dxgiAdapter");
+        OutputDebugStringA("Failed to retrieve factor from dxgiAdapter\n");
         exit(EXIT_FAILURE);
     }
 
@@ -341,29 +341,29 @@ void InitD3D11(void)
             DXGI_OUTPUT_DESC desc;
             pOutput->GetDesc(&desc);
 
-            OutputDebugStringA("Device : ");
+            OutputDebugStringA("Device : \n");
             OutputDebugString(desc.DeviceName);
 
             switch (desc.Rotation)
             {
             case DXGI_MODE_ROTATION_UNSPECIFIED:
-                OutputDebugStringA("Rotation: DXGI_MODE_ROTATION_UNSPECIFIED");
+                OutputDebugStringA("Rotation: DXGI_MODE_ROTATION_UNSPECIFIED\n");
                 break;
 
             case DXGI_MODE_ROTATION_IDENTITY:
-                OutputDebugStringA("Rotation: DXGI_MODE_ROTATION_IDENTITY");
+                OutputDebugStringA("Rotation: DXGI_MODE_ROTATION_IDENTITY\n");
                 break;
 
             case DXGI_MODE_ROTATION_ROTATE90:
-                OutputDebugStringA("Rotation: DXGI_MODE_ROTATION_ROTATE90");
+                OutputDebugStringA("Rotation: DXGI_MODE_ROTATION_ROTATE90\n");
                 break;
 
             case DXGI_MODE_ROTATION_ROTATE180:
-                OutputDebugStringA("Rotation: DXGI_MODE_ROTATION_ROTATE180");
+                OutputDebugStringA("Rotation: DXGI_MODE_ROTATION_ROTATE180\n");
                 break;
 
             case DXGI_MODE_ROTATION_ROTATE270:
-                OutputDebugStringA("Rotation: DXGI_MODE_ROTATION_ROTATE270");
+                OutputDebugStringA("Rotation: DXGI_MODE_ROTATION_ROTATE270\n");
                 break;
             }
 
@@ -404,7 +404,7 @@ void InitD3D11(void)
 
         if (!SUCCEEDED(result))
         {
-            OutputDebugStringA("Failed to query dxgiOutput6 from dxgiOutput");
+            OutputDebugStringA("Failed to query dxgiOutput6 from dxgiOutput\n");
             exit(EXIT_FAILURE);
         }
 
@@ -412,18 +412,18 @@ void InitD3D11(void)
 
         if (!SUCCEEDED(result))
         {
-            OutputDebugStringA("Failed to query hardware composition support from dxgiOutput6");
+            OutputDebugStringA("Failed to query hardware composition support from dxgiOutput6\n");
             exit(EXIT_FAILURE);
         }
 
         if (hardware_composition_support && DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_FULLSCREEN)
-            OutputDebugStringA("DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_FULLSCREEN == Supported");
+            OutputDebugStringA("DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_FULLSCREEN == Supported\n");
 
         if (hardware_composition_support && DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_WINDOWED)
-            OutputDebugStringA("DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_WINDOWED == Supported");
+            OutputDebugStringA("DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_WINDOWED == Supported\n");
 
         if (hardware_composition_support && DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_CURSOR_STRETCHED)
-            OutputDebugStringA("DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_CURSOR_STRETCHED == Supported");
+            OutputDebugStringA("DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_CURSOR_STRETCHED == Supported\n");
 
 
         assert(dxgiOutput6);
@@ -449,8 +449,8 @@ void InitD3D11(void)
             mode_descriptions
         );
 
-        OutputDebugStringA("Fullscreen modes available");
-        printf("Mode    Format Width Height     Refresh  Stereo Scaling ScanlineOrdering");
+        OutputDebugStringA("Fullscreen modes available\n");
+        OutputDebugStringA("Mode    Format Width Height     Refresh  Stereo Scaling ScanlineOrdering\n");
 
 
         DXGI_OUTPUT_DESC1 output_desc1;
@@ -463,7 +463,8 @@ void InitD3D11(void)
         {
             DXGI_MODE_DESC1* ptr = &mode_descriptions[i];
 
-            printf("%4d  %8x  %4u   %4u %5u/%05u   %5s    %4x             %4x",
+            char msg[1024];
+            snprintf(msg, 1024, "%4d  %8x  %4u   %4u %5u/%05u   %5s    %4x             %4x\n",
                 i,
                 ptr->Format,
                 ptr->Width,
@@ -473,9 +474,11 @@ void InitD3D11(void)
                 ptr->Scaling,
                 ptr->ScanlineOrdering);
 
+            OutputDebugStringA(msg);
+
             if (ptr->Width == display_width && ptr->Height == display_height && !ptr->Stereo)
             {
-                printf("*");
+                OutputDebugStringA("* Selected\n");
                 best_fullscreen_mode = ptr;
             }
         }
@@ -541,7 +544,7 @@ void InitD3D11(void)
 
         if (!SUCCEEDED(result))
         {
-            OutputDebugStringA("Failed to CreateSwapChainForHwnd from dxgiFactory");
+            OutputDebugStringA("Failed to CreateSwapChainForHwnd from dxgiFactory\n");
             exit(EXIT_FAILURE);
         }
 
@@ -557,8 +560,11 @@ void InitD3D11(void)
 
         device_context_11_x = (ID3D11DeviceContext1*)device_context_11_0;
 
-        printf("Direct3D 11 device context created");
-        printf("            Feature level 0x%x", feature_level);
+        OutputDebugStringA("Direct3D 11 device context created\n");
+
+        char msg[1024];
+        snprintf(msg, 1024, "            Feature level 0x%x\n", feature_level);
+        OutputDebugStringA(msg);
 
 
 
@@ -586,7 +592,6 @@ void InitD3D11(void)
 }
 
 
-
 void render(void)
 {
     // Clear the backbuffer entirely
@@ -605,7 +610,9 @@ void render(void)
             (FLOAT)window_height,
             0.0f, 1.0f };   // DepthMin, DepthMax
 
-        printf("render time viewport dimensions %f x %f", viewport.Width, viewport.Height);
+        char msg[1024];
+        snprintf(msg, 1024, "render time viewport dimensions %f x %f\n", viewport.Width, viewport.Height);
+        OutputDebugStringA(msg);
         device_context_11_0->RSSetViewports(1, &viewport);
     }
 #endif
@@ -793,7 +800,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_SIZE:
         {
             char msg[1024];
-            snprintf(msg, 1024, "New WM_SIZE event: %d x %d", LOWORD(lParam), HIWORD(lParam));
+            snprintf(msg, 1024, "New WM_SIZE event: %d x %d\n", LOWORD(lParam), HIWORD(lParam));
 
             OutputDebugStringA(msg);
 
@@ -873,7 +880,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             if (!SUCCEEDED(hr))
             {
-                OutputDebugStringA("Failed to resize swapchain buffer");
+                OutputDebugStringA("Failed to resize swapchain buffer\n");
                 exit(EXIT_FAILURE);
             }
 
@@ -883,14 +890,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             if (!SUCCEEDED(hr))
             {
-                OutputDebugStringA("Failed to retrieve swapchain buffer");
+                OutputDebugStringA("Failed to retrieve swapchain buffer\n");
                 exit(EXIT_FAILURE);
             }
 
             D3D11_TEXTURE2D_DESC desc;
             pBuffer->GetDesc(&desc);
 
-            printf("Swapchain buffer size : %d x %d", desc.Width, desc.Height);
+            //char msg[1024];
+            snprintf(msg, 1024, "Swapchain buffer size : %d x %d\n", desc.Width, desc.Height);
+            OutputDebugStringA(msg);
 
 
 
@@ -898,7 +907,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             if (!SUCCEEDED(hr))
             {
-                OutputDebugStringA("Failed to create render target view");
+                OutputDebugStringA("Failed to create render target view\n");
                 exit(EXIT_FAILURE);
             }
 
