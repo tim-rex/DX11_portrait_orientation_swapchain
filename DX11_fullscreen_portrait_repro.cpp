@@ -20,6 +20,7 @@
 
 #include <assert.h>
 #include <vector>
+#include <inttypes.h>
 
 
 #define ARRAY_COUNT(array) \
@@ -110,6 +111,7 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
 
 HWND hWnd;
 
+const UINT numFrames = 2;
 
 // Ref: https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nn-d3d12-id3d12device
 // Note: This interface was introduced in Windows 10. Applications targetting Windows 10 should use this interface instead of later versions.
@@ -151,7 +153,6 @@ ID3D12Debug3* debugController;
 //ID3D12Debug2* debugController;
 //ID3D12Debug1* debugController;
 //ID3D12Debug* debugController;
-
 #endif
 
 void dxgi_debug_pre_device_init()
@@ -284,14 +285,42 @@ void dxgi_debug_post_device_init()
 }
 
 
-D3D12_CPU_DESCRIPTOR_HANDLE destDescriptorRtv = {};
 ID3D12CommandQueue* commandQueue = nullptr;
 ID3D12DescriptorHeap* rtvHeap = nullptr;
-ID3D12Resource2* framebuffer = nullptr;
+ID3D12Resource2* framebuffer[numFrames] = {};
+
+
+// We need a command list
+/*
+device->CreateCommandList();
+device->CreateCommandList1();
+device->CreateCommandQueue();
+device->CreateCommandQueue1();
+*/
+
+ID3D12CommandAllocator* commandAllocator = nullptr;
+ID3D12GraphicsCommandList* commandList = nullptr;
+
+ID3D12PipelineState* pipelineState = nullptr;
+
 
 ID3D12Fence1* fence = nullptr;
 UINT64 fenceValue = 0;
 HANDLE fenceEvent = INVALID_HANDLE_VALUE;
+
+D3D12_CPU_DESCRIPTOR_HANDLE rtvHandles[numFrames];
+
+D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {
+    .Format = DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
+    .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D,
+};
+
+D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {
+    .Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
+    .NumDescriptors = numFrames,
+    .Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
+    .NodeMask = 0
+};
 
 
 
@@ -581,7 +610,7 @@ void InitD3D12(void)
                 .Quality = 0
              },
             .BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT,
-            .BufferCount = 2,								// Needs to be >= 2 for FLIP swap effect
+            .BufferCount = numFrames,								// Needs to be >= 2 for FLIP swap effect
             .Scaling = DXGI_SCALING_NONE,
             .SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD,	// DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL
             .Flags = swapchain_flags,
@@ -638,9 +667,7 @@ void InitD3D12(void)
 
         assert(S_OK == result && swapchain4 && device);
     
-        // First obtain the framebuffer from the swapchain
-        framebuffer = nullptr;
-
+        // First obtain the framebuffer images from the swapchain
 
         D3D12_HEAP_PROPERTIES heapProperties = {
             .Type = D3D12_HEAP_TYPE_DEFAULT,
@@ -655,6 +682,7 @@ void InitD3D12(void)
         UINT height = rect.bottom - rect.top;
         
 
+#if 0   // Buffer should be provided by the swapchain, we don't need to create our own here
         D3D12_RESOURCE_DESC resourceDesc = {
             .Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
             .Alignment = 0,
@@ -688,26 +716,18 @@ void InitD3D12(void)
             IID_PPV_ARGS(&framebuffer));
 
         framebuffer->SetName(L"framebuffer");
-        
+
         result = swapchain4->GetBuffer(0, IID_ID3D12Resource2, (void**)&framebuffer);
         assert(SUCCEEDED(result));
+#endif
+
+        
+
 
         // Now we can create the render target image view (pointing at the framebufer images already)
 
-        D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {
-            .Format = DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
-            .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D,
-        };
-
-
 
         // We need a descriptor heap for the render target view
-        D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {
-            .Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
-            .NumDescriptors = 100,
-            .Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
-            .NodeMask = 0
-        };
 
         //ID3D12Heap1 *rtvHeap = nullptr;
         //ID3D12Heap* rtvHeap = nullptr;
@@ -725,17 +745,29 @@ void InitD3D12(void)
         rtvHeap->SetName(L"rtvHeap");
 
         
+        // Create render target views for each swapchain image
+        {
+            D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = rtvHeap->GetCPUDescriptorHandleForHeapStart();
+            const UINT incrementSize = device->GetDescriptorHandleIncrementSize(rtvHeapDesc.Type);
 
-        destDescriptorRtv = rtvHeap->GetCPUDescriptorHandleForHeapStart();
+            // Create a renderTargetView for each swapchain frame
+            for (uint8_t i = 0; i < numFrames; i++)
+            {
+                swapchain4->GetBuffer(i, IID_PPV_ARGS(&framebuffer[i]));
+                device->CreateRenderTargetView(framebuffer[i], &rtvDesc, rtvHandle);
 
+                wchar_t name[32];
+                wsprintf(name, L"Framebuffer %d of %d", i, numFrames);
+                framebuffer[i]->SetName(name);
+                rtvHandles[i] = rtvHandle;
+                rtvHandle.ptr += incrementSize;                
+            }
 
-        device->CreateRenderTargetView(framebuffer, &rtvDesc, destDescriptorRtv);
-        
-        D3D12_RESOURCE_DESC desc = framebuffer->GetDesc();
-        D3D12_RESOURCE_DESC1 desc1 = framebuffer->GetDesc1();
+            D3D12_RESOURCE_DESC desc = framebuffer[frameIndex]->GetDesc();
+            D3D12_RESOURCE_DESC1 desc1 = framebuffer[frameIndex]->GetDesc1();
 
-        framebuffer->Release();
-    
+            //framebuffer->Release();
+        }
 
 
         // We need a fence to signal when the frame has rendered
@@ -757,50 +789,6 @@ void InitD3D12(void)
         }
 
     }
-
-}
-
-
-void WaitForPreviousFrame(void)
-{
-    // TODO: WAITING FOR THE FRAME TO COMPLETE BEFORE CONTIUING IS NOT BEST PRACTICE.
-    // see DX12 sample code from HelloWindow.cpp
-
-    const UINT64 localFenceValue = fenceValue;
-
-    commandQueue->Signal(fence, localFenceValue);
-    fenceValue++;
-
-    // Wait until the previous frame is finished
-    if (fence->GetCompletedValue() < localFenceValue)
-    {
-        fence->SetEventOnCompletion(localFenceValue, fenceEvent);
-        WaitForSingleObject(fenceEvent, INFINITE);
-    }
-
-    // TODO: Relies on swapchain3, where does that live?
-    UINT frameIndex = swapchain4->GetCurrentBackBufferIndex();
-
-
-
-}
-
-
-void render(void)
-{
-    // We need a command list
-    /*
-    device->CreateCommandList();
-    device->CreateCommandList1();
-    device->CreateCommandQueue();
-    device->CreateCommandQueue1();
-    */
-
-
-    ID3D12CommandAllocator* commandAllocator = nullptr;
-    ID3D12PipelineState* pipelineState = nullptr;
-    ID3D12GraphicsCommandList *commandList = nullptr;
-
 
 
     // Create a command allocator
@@ -844,14 +832,57 @@ void render(void)
             exit(EXIT_FAILURE);
         }
         commandList->SetName(L"commandList");
-
+        commandList->Close();
     }
 
+}
 
 
+void WaitForPreviousFrame(void)
+{
+    // TODO: WAITING FOR THE FRAME TO COMPLETE BEFORE CONTIUING IS NOT BEST PRACTICE.
+    // see DX12 sample code from HelloWindow.cpp
+
+    const UINT64 localFenceValue = fenceValue;
+
+    commandQueue->Signal(fence, localFenceValue);
+    fenceValue++;
+
+    // Wait until the previous frame is finished
+    if (fence->GetCompletedValue() < localFenceValue)
+    {
+        fence->SetEventOnCompletion(localFenceValue, fenceEvent);
+        WaitForSingleObject(fenceEvent, INFINITE);
+    }
+
+    // TODO: Relies on swapchain3, where does that live?
+    UINT frameIndex = swapchain4->GetCurrentBackBufferIndex();
+}
+
+
+void flushGpu()
+{
+    //for (int i = 0; i < numFrames; i++)
+    {
+        uint64_t fenceValueForSignal = ++fenceValue;
+        commandQueue->Signal(fence, fenceValueForSignal);
+        if (fence->GetCompletedValue() < fenceValue)
+        {
+            fence->SetEventOnCompletion(fenceValueForSignal, fenceEvent);
+            WaitForSingleObject(fenceEvent, INFINITE);
+        }
+    }
+    //frameIndex = 0;
+}
+
+
+void render(void)
+{
+    UINT frameIndex = swapchain4->GetCurrentBackBufferIndex();
 
     // Now start rendering
     
+    commandList->Reset(commandAllocator, nullptr);
 
     // Indicate that the back buffer will be used as a render target
 
@@ -861,7 +892,7 @@ void render(void)
             .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
             .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
             .Transition = {
-                .pResource = (ID3D12Resource*)framebuffer,
+                .pResource = (ID3D12Resource*)framebuffer[frameIndex],
                 .Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
                 .StateBefore = D3D12_RESOURCE_STATE_PRESENT,
                 .StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET
@@ -878,7 +909,7 @@ void render(void)
     // Clear the backbuffer entirely
     {
         const float clearColor1[4] = { 0.2f, 0.2f, 0.7f, 1.0f };
-        commandList->ClearRenderTargetView(destDescriptorRtv, clearColor1, 0, nullptr);
+        commandList->ClearRenderTargetView(rtvHandles[frameIndex], clearColor1, 0, nullptr);
     }
 
 
@@ -900,7 +931,7 @@ void render(void)
 
     // Set render targets
     {
-        commandList->OMSetRenderTargets(1, &destDescriptorRtv, FALSE, nullptr);
+        commandList->OMSetRenderTargets(1, &rtvHandles[frameIndex], FALSE, nullptr);
     }
 
 
@@ -919,7 +950,7 @@ void render(void)
                 .bottom = 300
             };
 
-            commandList->ClearRenderTargetView(destDescriptorRtv, clearColor, 1, &rect);
+            commandList->ClearRenderTargetView(rtvHandles[frameIndex], clearColor, 1, &rect);
         }
 
 
@@ -932,7 +963,7 @@ void render(void)
             rect.bottom = rect.top + 500;
 
             // Pink from top
-            commandList->ClearRenderTargetView(destDescriptorRtv, clearColor, 1, &rect);
+            commandList->ClearRenderTargetView(rtvHandles[frameIndex], clearColor, 1, &rect);
         }
 
 
@@ -945,7 +976,7 @@ void render(void)
             rect.bottom = rect.top + 500;
 
             // Green from bottom
-            commandList->ClearRenderTargetView(destDescriptorRtv, clearColor2, 1, &rect);
+            commandList->ClearRenderTargetView(rtvHandles[frameIndex], clearColor2, 1, &rect);
         }
 
         // TODO: How to enable blending?
@@ -960,7 +991,7 @@ void render(void)
             rect.bottom = rect.top + 100;
 
             // Black from bottom right
-            commandList->ClearRenderTargetView(destDescriptorRtv, clearColor3, 1, &rect);
+            commandList->ClearRenderTargetView(rtvHandles[frameIndex], clearColor3, 1, &rect);
         }
 
     }
@@ -974,7 +1005,7 @@ void render(void)
             .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
             .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
             .Transition = {
-                .pResource = (ID3D12Resource*)framebuffer,
+                .pResource = (ID3D12Resource*)framebuffer[frameIndex],
                 .Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
                 .StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET,
                 .StateAfter = D3D12_RESOURCE_STATE_PRESENT
@@ -1162,11 +1193,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 
             IDXGIOutput* output;
-            swapchain4->GetContainingOutput(&output);
+            HRESULT hr = swapchain4->GetContainingOutput(&output);
+            if (!SUCCEEDED(hr))
+            {
+                // This will fail if the window resides on a display for a differencedevice
+                // TODO: Handle this
+                OutputDebugStringA("Failed to retrieve containing output, window may have moved to a different display/interface?");
+                exit(-1);
+            }
 
             DXGI_OUTPUT_DESC output_desc;
             output->GetDesc(&output_desc);
-
+            output->Release();
 
 
             //this->device_context_11_x->ClearState();
@@ -1202,13 +1240,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             swapchain4->ResizeTarget(&target_mode);
 
 
-/*
-            HRESULT hr;
+#if 0   // Not yet operational
 
-            device_context_11_0->OMSetRenderTargets(0, 0, 0);
+            UINT frameIndex = swapchain4->GetCurrentBackBufferIndex();
+
+
+            // Reset the command list
+            //flushGpu();
+            //WaitForPreviousFrame();
+            commandAllocator->Reset();
+            commandList->Reset(commandAllocator, nullptr);
+
+
+            // Set render targets
+            commandList->OMSetRenderTargets(1, &rtvHandles[frameIndex], FALSE, nullptr);
+
 
             // Release all outstanding references to the swap chain's buffers.
-            render_target_view->Release();
+            //render_target_view->Release();
 
 
             //DXGI_OUTPUT_DESC output_desc;
@@ -1220,8 +1269,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             // Automatically choose the width and height to match the client rect for HWNDs.
 
 
+            swapchain4->ResizeBuffers(numFrames, window_width, window_height, DXGI_FORMAT_UNKNOWN, swapchain_flags);
+
             //hr = swapchain->ResizeBuffers(0, 0, 0, DXGI_FORMAT_UNKNOWN, swapchain_flags);
-            hr = swapchain->ResizeBuffers(0, window_width, window_height, DXGI_FORMAT_UNKNOWN, swapchain_flags);
+            //hr = swapchain->ResizeBuffers(0, window_width, window_height, DXGI_FORMAT_UNKNOWN, swapchain_flags);
 
             if (!SUCCEEDED(hr))
             {
@@ -1230,49 +1281,72 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             }
 
             // Get buffer and create a render-target-view.
-            ID3D11Texture2D* pBuffer;
-            hr = swapchain->GetBuffer(0, IID_ID3D11Texture2D, (void**)&pBuffer);
-
-            if (!SUCCEEDED(hr))
             {
-                OutputDebugStringA("Failed to retrieve swapchain buffer\n");
-                exit(EXIT_FAILURE);
+                D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = rtvHeap->GetCPUDescriptorHandleForHeapStart();
+                const UINT incrementSize = device->GetDescriptorHandleIncrementSize(rtvHeapDesc.Type);
+
+                for (uint8_t i = 0; i < numFrames; i++)
+                {
+                    hr = swapchain4->GetBuffer(i, IID_PPV_ARGS(&framebuffer[i]));
+
+                    if (!SUCCEEDED(hr))
+                    {
+                        OutputDebugStringA("Failed to retrieve swapchain buffer\n");
+                        exit(EXIT_FAILURE);
+                    }
+
+                    D3D12_RESOURCE_DESC1 desc1 = framebuffer[frameIndex]->GetDesc1();
+
+                    //char msg[1024];
+                    snprintf(msg, 1024, "Swapchain buffer[%u] size : %" PRIu64 " x %u\n", i, desc1.Width, desc1.Height);
+                    OutputDebugStringA(msg);
+
+                    device->CreateRenderTargetView(framebuffer[i], &rtvDesc, rtvHandle);
+                    //hr = device->CreateRenderTargetView(pBuffer, NULL, &render_target_view);
+
+                    if (!SUCCEEDED(hr))
+                    {
+                        OutputDebugStringA("Failed to create render target view\n");
+                        exit(EXIT_FAILURE);
+                    }
+
+
+                    wchar_t name[32];
+                    wsprintf(name, L"Framebuffer %d of %d", i, numFrames);
+                    framebuffer[i]->SetName(name);
+                    rtvHandles[i] = rtvHandle;
+                    rtvHandle.ptr += incrementSize;
+                }
             }
 
-            D3D11_TEXTURE2D_DESC desc;
-            pBuffer->GetDesc(&desc);
+            commandList->OMSetRenderTargets(1, &rtvHandles[frameIndex], FALSE, nullptr);
+            //device_context_11_0->OMSetRenderTargets(1, &render_target_view, nullptr);
 
-            //char msg[1024];
-            snprintf(msg, 1024, "Swapchain buffer size : %d x %d\n", desc.Width, desc.Height);
-            OutputDebugStringA(msg);
-
-
-            hr = device->CreateRenderTargetView(pBuffer, NULL, &render_target_view);
-
-            if (!SUCCEEDED(hr))
-            {
-                OutputDebugStringA("Failed to create render target view\n");
-                exit(EXIT_FAILURE);
-            }
-
-
-            pBuffer->Release();
-
-            device_context_11_0->OMSetRenderTargets(1, &render_target_view, nullptr);
 
             // Set up the viewport.
-            D3D11_VIEWPORT vp = {
+            D3D12_VIEWPORT vp = {
                 .Width = (float)window_width,
                 .Height = (float)window_height
             };
 
  
-            vp.MinDepth = 0.0f;
-            vp.MaxDepth = 1.0f;
-            vp.TopLeftX = 0;
-            vp.TopLeftY = 0;
-            device_context_11_0->RSSetViewports(1, &vp);
-*/
+            // Set viewports
+            
+            D3D12_VIEWPORT viewport = {
+                0.0f, 0.0f,   // X, Y
+                (FLOAT)window_width,
+                (FLOAT)window_height,
+                0.0f, 1.0f  // DepthMin, DepthMax
+            };
+
+            commandList->RSSetViewports(1, &viewport);
+            //device_context_11_0->RSSetViewports(1, &vp);
+            //commandList->Close();
+            //ID3D12CommandList* ppCommandLists[] = { commandList };
+            //commandQueue->ExecuteCommandLists(1, ppCommandLists);
+            
+            //WaitForPreviousFrame();
+#endif
 
         }
         return 0;
