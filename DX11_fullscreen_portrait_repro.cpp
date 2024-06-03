@@ -650,8 +650,13 @@ void InitD3D12(void)
         // device:  For Direct3D 12 this is a pointer to a direct command queue (refer to ID3D12CommandQueue).
         result = pFactory->CreateSwapChainForHwnd(commandQueue, hWnd, &swapchain_descriptor, &fullscreen_desc, nullptr, &swapchain1);
 
-        // Cast swapchain1 to swapchain4 (apparently, this is the way?)
-        swapchain4 = (IDXGISwapChain4*)swapchain1;
+
+        result = swapchain1->QueryInterface(IID_PPV_ARGS(&swapchain4));
+        if (!SUCCEEDED(result))
+        {
+            OutputDebugStringA("Failed to query for IDXGISwapChain4 from IDXGISwapChain1\n");
+            exit(EXIT_FAILURE);
+        }
 
         UINT frameIndex = swapchain4->GetCurrentBackBufferIndex();
         
