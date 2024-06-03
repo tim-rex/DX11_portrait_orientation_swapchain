@@ -1,26 +1,26 @@
-// DX11_fullscreen_portrait_repro.cpp : Defines the entry point for the application.
+// DX12_fullscreen_portrait_repro.cpp : Defines the entry point for the application.
 //
 
 
 // D3D11
 #pragma comment( lib, "user32" )          // link against the win32 library
-#pragma comment( lib, "d3d11.lib" )       // direct3D library
+#pragma comment( lib, "d3d12.lib" )
 #pragma comment( lib, "dxgi.lib" )        // directx graphics interface
 #pragma comment( lib, "d3dcompiler.lib" ) // shader compiler
 #pragma comment( lib, "dxguid.lib" )
 
 
 #include "framework.h"
-#include "DX11_fullscreen_portrait_repro.h"
+#include "DX12_fullscreen_portrait_repro.h"
 
-#include <d3d11.h>       // D3D interface
-#include <d3d11_1.h>     // D3D 11.1 extensions    TODO: Should we use 1_4 ? 1_5? 1_6?
-#include <dxgi1_6.h>     // CheckHardwareCompositionSupport
+#include <d3d12.h>
+#include <dxgi1_6.h>
 
 #include <dxgidebug.h>   // DXGI_INFO_QUEUE
 
 #include <assert.h>
 #include <vector>
+#include <inttypes.h>
 
 
 #define ARRAY_COUNT(array) \
@@ -55,7 +55,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
     // Initialize global strings
     LoadStringW(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
-    LoadStringW(hInstance, IDC_DX11FULLSCREENPORTRAITREPRO, szWindowClass, MAX_LOADSTRING);
+    LoadStringW(hInstance, IDC_DXFULLSCREENPORTRAITREPRO, szWindowClass, MAX_LOADSTRING);
     MyRegisterClass(hInstance);
 
     // Perform application initialization:
@@ -64,7 +64,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         return FALSE;
     }
 
-    HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_DX11FULLSCREENPORTRAITREPRO));
+    HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_DXFULLSCREENPORTRAITREPRO));
 
     MSG msg;
 
@@ -98,10 +98,10 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
     wcex.cbClsExtra     = 0;
     wcex.cbWndExtra     = 0;
     wcex.hInstance      = hInstance;
-    wcex.hIcon          = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_DX11FULLSCREENPORTRAITREPRO));
+    wcex.hIcon          = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_DXFULLSCREENPORTRAITREPRO));
     wcex.hCursor        = LoadCursor(nullptr, IDC_ARROW);
     wcex.hbrBackground  = (HBRUSH)(COLOR_WINDOW+1);
-    //wcex.lpszMenuName   = MAKEINTRESOURCEW(IDC_DX11FULLSCREENPORTRAITREPRO);
+    //wcex.lpszMenuName   = MAKEINTRESOURCEW(IDC_DXFULLSCREENPORTRAITREPRO);
     wcex.lpszClassName  = szWindowClass;
     wcex.hIconSm        = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
 
@@ -110,13 +110,35 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
 
 
 HWND hWnd;
-ID3D11Device* device = nullptr;
-ID3D11DeviceContext* device_context_11_0 = nullptr;
-ID3D11DeviceContext1* device_context_11_x = nullptr;
-IDXGISwapChain1* swapchain = nullptr;
-ID3D11RenderTargetView* render_target_view = nullptr;
 
-D3D_FEATURE_LEVEL feature_level;
+const UINT numFrames = 2;
+
+// Ref: https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nn-d3d12-id3d12device
+// Note: This interface was introduced in Windows 10. Applications targetting Windows 10 should use this interface instead of later versions.
+// Applications targetting a later version of Windows 10 should use the appropriate version of the ID3D12Device interface.
+// The latest version of this interface is ID3D12Device3 introduced in Windows 10 Fall Creators Update.
+
+
+//ID3D12Device10* device10 = nullptr;
+//ID3D12Device9* device = nullptr;
+//ID3D12Device8* device = nullptr;    // Works on Windows 10, despite documentation note above
+//ID3D12Device7* device = nullptr;
+//ID3D12Device6* device = nullptr;
+//ID3D12Device5* device = nullptr;
+ID3D12Device4* device = nullptr;       // CreateCommandList1
+//ID3D12Device3* device = nullptr;
+//ID3D12Device2* device = nullptr;
+//ID3D12Device1* device = nullptr;
+
+//ID3D12Device* device = nullptr;
+// 
+//ID3D12Resource2* resource2 = nullptr;
+
+//IDXGISwapChain1* swapchain = nullptr;
+IDXGISwapChain4* swapchain4 = nullptr;
+
+ID3D12Resource2* render_target_view = nullptr;
+
 
 UINT window_width = 0;
 UINT window_height = 0;
@@ -124,22 +146,44 @@ BOOL DXGI_fullscreen = false;
 BOOL allowTearing = false;
 
 
-void dxgi_debug_init()
+void dxgi_debug_pre_device_init()
 {
-    assert(device);
-    
+    //assert(device);
 
 #ifndef NDEBUG
+    //ID3D12Debug6* debugController;
+    //ID3D12Debug5* debugController;
+    //ID3D12Debug4* debugController;
+    ID3D12Debug3* debugController;
+    //ID3D12Debug2* debugController;
+    //ID3D12Debug1* debugController;
+    //ID3D12Debug* debugController;
+    
+    // Enable the debug layer
+    {
+        HRESULT hr = 0;
+        hr = D3D12GetInterface(CLSID_D3D12Debug, IID_PPV_ARGS(&debugController));
+
+        if (SUCCEEDED(hr))
+        {
+            debugController->EnableDebugLayer();
+        }
+        else
+        {
+            OutputDebugStringA("Failed to obtain D3D12Debug interface");
+            exit(-1);
+        }
+
+
+    }
+}
+
+void dxgi_debug_post_device_init()
+{
+    assert(device);
 
     // Debug
     {
-
-        // OMFG.. This was hidden deep.. except, I already have that. FUCK.
-        // Flat out DOES NOT WORK
-        // //
-        // Maybe because the errors are occuring within a DLL? Do we need to configure the info queue within the DLL also?
-
-        // 
         //  Note
         //  For Windows 10, to create a device that supports the debug layer, enable the "Graphics Tools" optional feature.Go to the Settings panel, 
         //  under System, Apps& features, Manage optional Features, Add a feature, and then look for "Graphics Tools".
@@ -147,37 +191,60 @@ void dxgi_debug_init()
 
         // for debug builds enable VERY USEFUL debug break on API errors
         {
-            ID3D11InfoQueue* info;
-            device->QueryInterface(__uuidof(ID3D11InfoQueue), (void**)&info);
-            info->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_CORRUPTION, TRUE);
-            info->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_ERROR, TRUE);
-            info->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_WARNING, TRUE);
-            info->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_INFO, TRUE);
-            info->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_MESSAGE, TRUE);
+            ID3D12InfoQueue* info = nullptr;
 
-            info->SetBreakOnCategory(D3D11_MESSAGE_CATEGORY_APPLICATION_DEFINED, TRUE);
-            info->SetBreakOnCategory(D3D11_MESSAGE_CATEGORY_MISCELLANEOUS, TRUE);
-            info->SetBreakOnCategory(D3D11_MESSAGE_CATEGORY_INITIALIZATION, TRUE);
-            info->SetBreakOnCategory(D3D11_MESSAGE_CATEGORY_CLEANUP, TRUE);
-            info->SetBreakOnCategory(D3D11_MESSAGE_CATEGORY_COMPILATION, TRUE);
-            info->SetBreakOnCategory(D3D11_MESSAGE_CATEGORY_STATE_CREATION, TRUE);
-            info->SetBreakOnCategory(D3D11_MESSAGE_CATEGORY_STATE_SETTING, TRUE);
-            info->SetBreakOnCategory(D3D11_MESSAGE_CATEGORY_STATE_GETTING, TRUE);
-            info->SetBreakOnCategory(D3D11_MESSAGE_CATEGORY_RESOURCE_MANIPULATION, TRUE);
-            info->SetBreakOnCategory(D3D11_MESSAGE_CATEGORY_EXECUTION, TRUE);
-            info->SetBreakOnCategory(D3D11_MESSAGE_CATEGORY_SHADER, TRUE);
+            HRESULT hr = 0;
+            hr = device->QueryInterface(IID_PPV_ARGS(&info));
+            
+            if (FAILED(hr))
+            {
+                OutputDebugStringA("Failed to query interface for ID3D12InfoQueue from device, did you EnableDebugLayer?");
+                exit(-1);
+            }
+            assert(info);
 
-            //info->AddMessage(D3D11_MESSAGE_CATEGORY_MISCELLANEOUS, D3D11_MESSAGE_SEVERITY_ERROR, D3D11_MESSAGE_ID_UNKNOWN, "TEST MISCELLANOUS ERROR");
-            //info->AddApplicationMessage(D3D11_MESSAGE_SEVERITY_ERROR, "TEST");
-            //info->AddMessage(D3D11_MESSAGE_CATEGORY_MISCELLANEOUS, D3D11_MESSAGE_SEVERITY_ERROR, D3D11_MESSAGE_ID_UNKNOWN, "TEST");
+#if 0
+            ID3D12InfoQueue1*info1;
+            hr = info->QueryInterface(IID_PPV_ARGS(&info1));
+
+            if (FAILED(hr))
+            {
+                OutputDebugStringA("Failed to query interface for ID3D12InfoQueue1 from ID3D12InfoQueue");
+                exit(-1);
+            }
+            assert(info1);
+#endif
+
+
+            info->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE);
+            info->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, TRUE);
+            info->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, TRUE);
+            info->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_INFO, TRUE);
+            info->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_MESSAGE, TRUE);
+
+            info->SetBreakOnCategory(D3D12_MESSAGE_CATEGORY_APPLICATION_DEFINED, TRUE);
+            info->SetBreakOnCategory(D3D12_MESSAGE_CATEGORY_MISCELLANEOUS, TRUE);
+            info->SetBreakOnCategory(D3D12_MESSAGE_CATEGORY_INITIALIZATION, TRUE);
+            info->SetBreakOnCategory(D3D12_MESSAGE_CATEGORY_CLEANUP, TRUE);
+            info->SetBreakOnCategory(D3D12_MESSAGE_CATEGORY_COMPILATION, TRUE);
+            info->SetBreakOnCategory(D3D12_MESSAGE_CATEGORY_STATE_CREATION, TRUE);
+            info->SetBreakOnCategory(D3D12_MESSAGE_CATEGORY_STATE_SETTING, TRUE);
+            info->SetBreakOnCategory(D3D12_MESSAGE_CATEGORY_STATE_GETTING, TRUE);
+            info->SetBreakOnCategory(D3D12_MESSAGE_CATEGORY_RESOURCE_MANIPULATION, TRUE);
+            info->SetBreakOnCategory(D3D12_MESSAGE_CATEGORY_EXECUTION, TRUE);
+            info->SetBreakOnCategory(D3D12_MESSAGE_CATEGORY_SHADER, TRUE);
+
+            //info->AddMessage(D3D12_MESSAGE_CATEGORY_MISCELLANEOUS, D3D12_MESSAGE_SEVERITY_ERROR, D3D12_MESSAGE_ID_UNKNOWN, "TEST MISCELLANOUS ERROR");
+            //info->AddApplicationMessage(D3D12_MESSAGE_SEVERITY_ERROR, "TEST");
+            //info->AddMessage(D3D12_MESSAGE_CATEGORY_MISCELLANEOUS, D3D12_MESSAGE_SEVERITY_ERROR, D3D12_MESSAGE_ID_UNKNOWN, "TEST");
 
             info->Release();
         }
 
         // enable debug break for DXGI too
         {
-            IDXGIInfoQueue* info;
-            DXGIGetDebugInterface1(0, __uuidof(IDXGIInfoQueue), (void**)&info);
+            IDXGIInfoQueue* info; 
+            DXGIGetDebugInterface1(0, IID_PPV_ARGS(&info));
 
             info->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_CORRUPTION, TRUE);
             info->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_ERROR, TRUE);
@@ -203,7 +270,7 @@ void dxgi_debug_init()
             //info->AddApplicationMessage(DXGI_INFO_QUEUE_MESSAGE_SEVERITY_ERROR, "TEST");
 
             // NOTE: Result message will let us break
-            //info->AddMessage(DXGI_DEBUG_DXGI, DXGI_INFO_QUEUE_MESSAGE_CATEGORY_MISCELLANEOUS, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_ERROR, D3D11_MESSAGE_ID_UNKNOWN, "TEST");
+            //info->AddMessage(DXGI_DEBUG_DXGI, DXGI_INFO_QUEUE_MESSAGE_CATEGORY_MISCELLANEOUS, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_ERROR, D3D12_MESSAGE_ID_UNKNOWN, "TEST");
 
             //debug_info->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_ALL);
 
@@ -218,27 +285,62 @@ void dxgi_debug_init()
 
 }
 
-void InitD3D11(void)
+
+ID3D12CommandQueue* commandQueue = nullptr;
+ID3D12DescriptorHeap* rtvHeap = nullptr;
+ID3D12Resource2* framebuffer[numFrames] = {};
+
+
+// We need a command allocater + command list
+ID3D12CommandAllocator* commandAllocator = nullptr;
+ID3D12GraphicsCommandList* commandList = nullptr;
+
+// TODO: We're not yet using a custom pipeline state
+ID3D12PipelineState* pipelineState = nullptr;
+
+
+ID3D12Fence1* fence = nullptr;
+UINT64 fenceValues[numFrames];
+
+HANDLE fenceEvent = INVALID_HANDLE_VALUE;
+
+D3D12_CPU_DESCRIPTOR_HANDLE rtvHandles[numFrames];
+
+D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {
+    .Format = DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
+    .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D,
+};
+
+D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {
+    .Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
+    .NumDescriptors = numFrames,
+    .Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
+    .NodeMask = 0
+};
+
+
+
+void InitD3D12(void)
 {
     HRESULT result;
-    IDXGIAdapter* dxgiAdapter = nullptr;
+    IDXGIAdapter4* dxgiAdapter = nullptr;
+
 
     D3D_FEATURE_LEVEL feature_level_req[] = {
         D3D_FEATURE_LEVEL_11_1,
         D3D_FEATURE_LEVEL_11_0,
     };
 
-    UINT device_flags = D3D11_CREATE_DEVICE_SINGLETHREADED;
-
-#if defined( DEBUG ) || defined( _DEBUG )
-    device_flags |= D3D11_CREATE_DEVICE_DEBUG;
+#ifdef NDEBUG
+    UINT flags = 0; 
+#else
+    UINT flags = DXGI_CREATE_FACTORY_DEBUG;
 #endif
 
-
     IDXGIFactory7* pFactory;
-    result = CreateDXGIFactory1(IID_IDXGIFactory7, (void**)(&pFactory));
+    result = CreateDXGIFactory2(flags, IID_PPV_ARGS(&pFactory));
 
-    if (!SUCCEEDED(result))
+    if (FAILED(result))
     {
         exit(EXIT_FAILURE);
     }
@@ -252,82 +354,60 @@ void InitD3D11(void)
     pFactory->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &allowTearing, sizeof(allowTearing));
 
 
+    dxgi_debug_pre_device_init();
+
     // Device selection
     D3D_DRIVER_TYPE d3d_driver_type = D3D_DRIVER_TYPE_HARDWARE;
 
-    IDXGIFactory7* factory = nullptr;
-
-    // We must use IDXGI interfaces now to query and build a swapchain
-    IDXGIDevice4* dxgiDevice4 = nullptr;
 
 
-    result = D3D11CreateDevice(
-        dxgiAdapter,
-        d3d_driver_type,
-        nullptr,
-        device_flags,
-        &feature_level_req[0],
-        ARRAY_COUNT(feature_level_req),
-        D3D11_SDK_VERSION,
-        &device,
-        &feature_level,
-        &device_context_11_0
-    );
-
-    if (result == E_INVALIDARG)
+    // Get adapter
+    UINT i = 0;
+    IDXGIAdapter1* pAdapter;
+    std::vector <IDXGIAdapter1*> vAdapters;
+    while (pFactory->EnumAdapters1(i, &pAdapter) != DXGI_ERROR_NOT_FOUND)
     {
-        OutputDebugStringA("Direct3D 11_1 device not available, trying again for 11_0\n");
-
-        // https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-d3d11createdeviceandswapchain
-        //    If you provide a D3D_FEATURE_LEVEL array that contains D3D_FEATURE_LEVEL_11_1 on a computer 
-        //    that doesn't have the Direct3D 11.1 runtime installed, this function immediately fails with 
-        //    E_INVALIDARG.
-
-        result = D3D11CreateDevice(
-            dxgiAdapter,
-            d3d_driver_type,
-            nullptr,
-            device_flags,
-            &feature_level_req[1],
-            ARRAY_COUNT(feature_level_req) - 1,
-            D3D11_SDK_VERSION,
-            &device,
-            &feature_level,
-            &device_context_11_0);
+        vAdapters.push_back(pAdapter);
+        ++i;
     }
 
-    if (!SUCCEEDED(result))
+    for (auto adapter : vAdapters)
     {
-        OutputDebugStringA("Failed D3D11CreateDevice\n");
+        DXGI_ADAPTER_DESC1 adapterDesc1;
+        adapter->GetDesc1(&adapterDesc1);
+
+        OutputDebugStringW(adapterDesc1.Description);
+
+        if (wcscmp(adapterDesc1.Description, L"Radeon RX 580 Series") == 0)
+            continue;
+
+        dxgiAdapter = (IDXGIAdapter4 *) adapter;
+        break;
+
+    }
+
+    result = D3D12CreateDevice(dxgiAdapter, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device) );
+    
+    if (FAILED(result))
+    {
+        OutputDebugStringA("Failed D3D12CreateDevice\n");
+        exit(EXIT_FAILURE);
+    }
+    device->SetName(L"device");
+
+    LUID luid = device->GetAdapterLuid();
+    result = pFactory->EnumAdapterByLuid(luid, IID_PPV_ARGS(&dxgiAdapter));
+
+    if (FAILED(result))
+    {
+        OutputDebugStringA("Failed to enumerate Adapter from device LUID\n");
         exit(EXIT_FAILURE);
     }
 
-    dxgi_debug_init();
-
-    result = device->QueryInterface(IID_IDXGIDevice4, (void**)&dxgiDevice4);
-    if (!SUCCEEDED(result))
-    {
-        OutputDebugStringA("Failed to query interface for dxgiDevice4\n");
-        exit(EXIT_FAILURE);
-    }
-
-    result = dxgiDevice4->GetAdapter(&dxgiAdapter);
-    if (!SUCCEEDED(result))
-    {
-        OutputDebugStringA("Failed to get adapter from dxgiDevice4\n");
-        exit(EXIT_FAILURE);
-    }
-
-    result = dxgiAdapter->GetParent(IID_IDXGIFactory7, (void**)&factory);
-    if (!SUCCEEDED(result))
-    {
-        OutputDebugStringA("Failed to retrieve factor from dxgiAdapter\n");
-        exit(EXIT_FAILURE);
-    }
+    dxgi_debug_post_device_init();
 
 
     IDXGIOutput* dxgiOutput = nullptr;
-
 
     // Get the display output description, we'll identify the window coordinates of the display and move our window to it
     {
@@ -399,10 +479,9 @@ void InitD3D11(void)
         IDXGIOutput6* dxgiOutput6 = nullptr;
         DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAGS hardware_composition_support = {};
 
+        result = dxgiOutput->QueryInterface(IID_PPV_ARGS(&dxgiOutput6));
 
-        result = dxgiOutput->QueryInterface(IID_IDXGIOutput6, (void**)&dxgiOutput6);
-
-        if (!SUCCEEDED(result))
+        if (FAILED(result))
         {
             OutputDebugStringA("Failed to query dxgiOutput6 from dxgiOutput\n");
             exit(EXIT_FAILURE);
@@ -410,7 +489,7 @@ void InitD3D11(void)
 
         result = dxgiOutput6->CheckHardwareCompositionSupport((UINT*)&hardware_composition_support);
 
-        if (!SUCCEEDED(result))
+        if (FAILED(result))
         {
             OutputDebugStringA("Failed to query hardware composition support from dxgiOutput6\n");
             exit(EXIT_FAILURE);
@@ -429,7 +508,7 @@ void InitD3D11(void)
         assert(dxgiOutput6);
 
         UINT flags = 0;
-        UINT numModes;
+        UINT numModes = 0;
 
         // Consider available display modes. Prefer that which matches our current (ideally native) desktop dimensions
 
@@ -491,6 +570,21 @@ void InitD3D11(void)
         //assert(best_fullscreen_mode);
     }
 
+    commandQueue = nullptr;
+    // Command queue creation
+    {
+
+        const D3D12_COMMAND_QUEUE_DESC commandQueueDesc = {
+            .Type = D3D12_COMMAND_LIST_TYPE_DIRECT,
+            .Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL ,
+            .Flags = D3D12_COMMAND_QUEUE_FLAG_NONE ,
+            .NodeMask = 0,
+        };
+
+        device->CreateCommandQueue(&commandQueueDesc, IID_PPV_ARGS(&commandQueue));
+        commandQueue->SetName(L"commandQueue");
+    }
+    
 
     // Swapchain creation
     {
@@ -509,7 +603,7 @@ void InitD3D11(void)
                 .Quality = 0
              },
             .BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT,
-            .BufferCount = 2,								// Needs to be >= 2 for FLIP swap effect
+            .BufferCount = numFrames,								// Needs to be >= 2 for FLIP swap effect
             .Scaling = DXGI_SCALING_NONE,
             .SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD,	// DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL
             .Flags = swapchain_flags,
@@ -540,9 +634,22 @@ void InitD3D11(void)
         };
 
 
-        result = factory->CreateSwapChainForHwnd(device, hWnd, &swapchain_descriptor, &fullscreen_desc, nullptr, &swapchain);
+        IDXGISwapChain1 *swapchain1;
+        // device:  For Direct3D 12 this is a pointer to a direct command queue (refer to ID3D12CommandQueue).
+        result = pFactory->CreateSwapChainForHwnd(commandQueue, hWnd, &swapchain_descriptor, &fullscreen_desc, nullptr, &swapchain1);
 
-        if (!SUCCEEDED(result))
+
+        result = swapchain1->QueryInterface(IID_PPV_ARGS(&swapchain4));
+        if (FAILED(result))
+        {
+            OutputDebugStringA("Failed to query for IDXGISwapChain4 from IDXGISwapChain1\n");
+            exit(EXIT_FAILURE);
+        }
+
+        UINT frameIndex = swapchain4->GetCurrentBackBufferIndex();
+        
+
+        if (FAILED(result))
         {
             OutputDebugStringA("Failed to CreateSwapChainForHwnd from dxgiFactory\n");
             exit(EXIT_FAILURE);
@@ -550,121 +657,342 @@ void InitD3D11(void)
 
 
         // Uncomment to prevent Alt+Enter from triggering a fullscreen switch
-        //factory->MakeWindowAssociation(hWnd, DXGI_MWA_NO_ALT_ENTER);
+        //pFactory->MakeWindowAssociation(hWnd, DXGI_MWA_NO_ALT_ENTER);
 
-        factory->Release();
+        pFactory->Release();
         dxgiAdapter->Release();
-        dxgiDevice4->Release();
+        //dxgiDevice->Release();
 
-        assert(S_OK == result && swapchain && device && device_context_11_0);
+        assert(SUCCEEDED(result) && swapchain4 && device);
+    
+        // First obtain the framebuffer images from the swapchain
 
-        device_context_11_x = (ID3D11DeviceContext1*)device_context_11_0;
+        D3D12_HEAP_PROPERTIES heapProperties = {
+            .Type = D3D12_HEAP_TYPE_DEFAULT,
+        };
 
-        OutputDebugStringA("Direct3D 11 device context created\n");
-
-        char msg[1024];
-        snprintf(msg, 1024, "            Feature level 0x%x\n", feature_level);
-        OutputDebugStringA(msg);
+        D3D12_HEAP_FLAGS heapFlags = D3D12_HEAP_FLAG_NONE;
 
 
+        RECT rect;
+        GetClientRect(hWnd, &rect);
+        UINT64 width = rect.right - rect.left;
+        UINT height = rect.bottom - rect.top;
+        
 
-        // First obtain the framebuffer from the swapchain
+#if 0   // Buffer should be provided by the swapchain, we don't need to create our own here
+        D3D12_RESOURCE_DESC resourceDesc = {
+            .Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+            .Alignment = 0,
+            .Width = width,
+            .Height = height,
+            .DepthOrArraySize = 1,
+            .MipLevels = 1,
+            .Format = DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,           
+            .SampleDesc = {
+                .Count = 1,
+                .Quality = 0
+             },
+            .Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN,
+            .Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET // | D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL,            
+        };
 
-        ID3D11Texture2D* framebuffer;
-        result = swapchain->GetBuffer(0, IID_ID3D11Texture2D, (void**)&framebuffer);
+        D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_RENDER_TARGET;
+        //D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_PRESENT;
+
+        D3D12_CLEAR_VALUE clearValue = {
+            .Format = DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
+            .Color = { 0.2f, 0.2f, 0.7f, 1.0f }
+        };
+
+        device->CreateCommittedResource(
+            &heapProperties,
+            heapFlags,
+            &resourceDesc,
+            state,
+            &clearValue,
+            IID_PPV_ARGS(&framebuffer));
+
+        framebuffer->SetName(L"framebuffer");
+
+        result = swapchain4->GetBuffer(0, IID_ID3D12Resource2, (void**)&framebuffer);
         assert(SUCCEEDED(result));
+#endif
+
+        
+
 
         // Now we can create the render target image view (pointing at the framebufer images already)
 
-        D3D11_RENDER_TARGET_VIEW_DESC rtvDesc = {
-            .Format = DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
-            .ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D,
-        };
 
-        result = device->CreateRenderTargetView(framebuffer, &rtvDesc, &render_target_view);
-        assert(SUCCEEDED(result));
+        // We need a descriptor heap for the render target view
 
-        D3D11_TEXTURE2D_DESC framebufferSurfaceDesc;
-        framebuffer->GetDesc(&framebufferSurfaceDesc);
+        //ID3D12Heap1 *rtvHeap = nullptr;
+        //ID3D12Heap* rtvHeap = nullptr;
+        rtvHeap = nullptr;
 
-        framebuffer->Release();
+        result = device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&rtvHeap));
+        rtvHeap->SetName(L"rtvDescriptorHeap");
+
+        if (FAILED(result))
+        {
+            OutputDebugStringA("Failed to CreateDescriptorHeap\n");
+            exit(EXIT_FAILURE);
+        }
+
+        rtvHeap->SetName(L"rtvHeap");
+
+        
+        // Create render target views for each swapchain image
+        {
+            D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = rtvHeap->GetCPUDescriptorHandleForHeapStart();
+            const UINT incrementSize = device->GetDescriptorHandleIncrementSize(rtvHeapDesc.Type);
+
+            // Create a renderTargetView for each swapchain frame
+            for (uint8_t i = 0; i < numFrames; i++)
+            {
+                swapchain4->GetBuffer(i, IID_PPV_ARGS(&framebuffer[i]));
+                device->CreateRenderTargetView(framebuffer[i], &rtvDesc, rtvHandle);
+
+                wchar_t name[32];
+                wsprintf(name, L"Framebuffer %d of %d", i, numFrames);
+                framebuffer[i]->SetName(name);
+                rtvHandles[i] = rtvHandle;
+                rtvHandle.ptr += incrementSize;                
+            }
+
+            D3D12_RESOURCE_DESC desc = framebuffer[frameIndex]->GetDesc();
+            D3D12_RESOURCE_DESC1 desc1 = framebuffer[frameIndex]->GetDesc1();
+
+            //framebuffer->Release();
+        }
+
+
+        // We need a fence to signal when the frame has rendered
+        {
+            device->CreateFence(fenceValues[frameIndex], D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
+            fenceValues[frameIndex]++;
+
+            // TODO: This is a windows native event
+            // Ref: https://learn.microsoft.com/en-us/windows/win32/sync/using-event-objects
+
+            // Create an event handle to use for frame synchronisation
+            fenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+
+            if (fenceEvent == nullptr)
+            {
+                OutputDebugStringA("Failed to create fence event");
+                exit(-1);
+            }
+        }
+
     }
+
+
+    // Create a command allocator
+    {
+        HRESULT result = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&commandAllocator));
+
+        if (FAILED(result))
+        {
+            OutputDebugStringA("Failed to CreateCommandAllocator\n");
+            exit(EXIT_FAILURE);
+        }
+
+        commandAllocator->SetName(L"allocator");
+    }
+
+
+    // TODO: Create pipeline state
+    /*
+    {
+        D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
+
+        HRESULT result = device->CreatePipelineState(desc, IID_PPV_ARGS(&pipelineState));
+
+        if (FAILED(result))
+        {
+            OutputDebugStringA("Failed to CreatePipelineState\n");
+            exit(EXIT_FAILURE);
+        }
+
+    }
+    */
+
+
+    // Create a command list
+    {
+        HRESULT result = device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, commandAllocator, pipelineState, IID_PPV_ARGS(&commandList));
+
+        if (FAILED(result))
+        {
+            OutputDebugStringA("Failed to CreateCommandList\n");
+            exit(EXIT_FAILURE);
+        }
+        commandList->SetName(L"commandList");
+        commandList->Close();
+    }
+
 }
+
+
+#if 1
+void WaitForGPU(void)
+{
+    UINT frameIndex = swapchain4->GetCurrentBackBufferIndex();
+
+    commandQueue->Signal(fence, fenceValues[frameIndex]);
+
+    fence->SetEventOnCompletion(fenceValues[frameIndex], fenceEvent);
+    WaitForSingleObjectEx(fenceEvent, INFINITE, FALSE);
+
+    // Increment the fence value for the current fram
+    fenceValues[frameIndex]++;
+}
+
+/*
+void flushGpu()
+{
+    //for (int i = 0; i < numFrames; i++)
+    {
+        uint64_t fenceValueForSignal = ++fenceValue;
+        commandQueue->Signal(fence, fenceValueForSignal);
+        if (fence->GetCompletedValue() < fenceValue)
+        {
+            fence->SetEventOnCompletion(fenceValueForSignal, fenceEvent);
+            WaitForSingleObject(fenceEvent, INFINITE);
+        }
+    }
+    //frameIndex = 0;
+}
+*/
+
+
+#else
+void WaitForPreviousFrame(void)
+{
+    // TODO: WAITING FOR THE FRAME TO COMPLETE BEFORE CONTIUING IS NOT BEST PRACTICE.
+    // see DX12 sample code from HelloWindow.cpp
+
+    const UINT64 localFenceValue = fenceValue;
+
+    commandQueue->Signal(fence, localFenceValue);
+    fenceValue++;
+
+    // Wait until the previous frame is finished
+    if (fence->GetCompletedValue() < localFenceValue)
+    {
+        fence->SetEventOnCompletion(localFenceValue, fenceEvent);
+        WaitForSingleObject(fenceEvent, INFINITE);
+    }
+
+    // TODO: Relies on swapchain3, where does that live?
+    UINT frameIndex = swapchain4->GetCurrentBackBufferIndex();
+}
+#endif
 
 
 void render(void)
 {
+    UINT frameIndex = swapchain4->GetCurrentBackBufferIndex();
+
+    // Now start rendering
+    
+    commandList->Reset(commandAllocator, nullptr);
+
+    // Indicate that the back buffer will be used as a render target
+
+    {
+        // Create a resource barrier
+        D3D12_RESOURCE_BARRIER resourceBarrierTransitionPresentTarget = {
+            .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+            .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+            .Transition = {
+                .pResource = (ID3D12Resource*)framebuffer[frameIndex],
+                .Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                .StateBefore = D3D12_RESOURCE_STATE_PRESENT,
+                .StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET
+            }
+        };
+
+        commandList->ResourceBarrier(1, &resourceBarrierTransitionPresentTarget);
+    }
+    
+    // TODO: Set root signature
+    //commandList1->SetGraphicsRootSignature(rootsig);
+
+
     // Clear the backbuffer entirely
     {
-        float clearColor1[4] = { 0.2f, 0.2f, 0.7f, 1.0f };
-        device_context_11_0->ClearRenderTargetView(render_target_view, &clearColor1[0]);
+        const float clearColor1[4] = { 0.2f, 0.2f, 0.7f, 1.0f };
+        commandList->ClearRenderTargetView(rtvHandles[frameIndex], clearColor1, 0, nullptr);
     }
 
 
-#if 0
     // Set the viewport
     {
-        D3D11_VIEWPORT viewport = {
+        D3D12_VIEWPORT viewport = {
             0.0f, 0.0f,   // X, Y
             (FLOAT)window_width,
             (FLOAT)window_height,
-            0.0f, 1.0f };   // DepthMin, DepthMax
+            0.0f, 1.0f  // DepthMin, DepthMax
+        };
 
         char msg[1024];
         snprintf(msg, 1024, "render time viewport dimensions %f x %f\n", viewport.Width, viewport.Height);
         OutputDebugStringA(msg);
-        device_context_11_0->RSSetViewports(1, &viewport);
+        commandList->RSSetViewports(1, &viewport);
     }
-#endif
 
 
-    UINT num_views = 1;
-    device_context_11_0->OMSetRenderTargets(num_views, &render_target_view, nullptr);
-    
-    if (feature_level >= 1)
+    // Set render targets
     {
-        // Only supported on D3D 11.1, otherwise we have to draw quads (per Metal)
+        commandList->OMSetRenderTargets(1, &rtvHandles[frameIndex], FALSE, nullptr);
+    }
 
+
+    // Draw something
+    {
         // Clear a 200x200 pixel square at position 100x100
         {
             const FLOAT clearColor[4] = { 0.7f, 0.7f, 1.0f, 1.0f };
 
             // D3D11 appears to be top to bottom
             //RECT = {x1, y1, x2, y2}
-            const D3D11_RECT rect = {
+            const D3D12_RECT rect = {
                 .left = 100,
                 .top = 100,
                 .right = 300,
                 .bottom = 300
             };
 
-            device_context_11_x->ClearView(render_target_view, clearColor, &rect, 1);
+            commandList->ClearRenderTargetView(rtvHandles[frameIndex], clearColor, 1, &rect);
         }
 
 
         {
             const FLOAT clearColor[4] = { 1.0f, 0.2f, 0.7f, 1.0f };
-            D3D11_RECT rect;
+            D3D12_RECT rect;
             rect.left = std::min(600, (int32_t)window_width);
             rect.top = std::min(100, (int32_t)window_height);
             rect.right = rect.left + 500;
             rect.bottom = rect.top + 500;
 
             // Pink from top
-            device_context_11_x->ClearView(render_target_view, clearColor, &rect, 1);
+            commandList->ClearRenderTargetView(rtvHandles[frameIndex], clearColor, 1, &rect);
         }
 
 
         {
             const FLOAT clearColor2[4] = { 0.2f, 1.0f, 0.7f, 1.0f };
-            D3D11_RECT rect;
+            D3D12_RECT rect;
             rect.left = std::min(600L, (LONG)window_width);
             rect.top = std::max(0L, (LONG)window_height - 600L);
             rect.right = rect.left + 500;
             rect.bottom = rect.top + 500;
 
             // Green from bottom
-            device_context_11_x->ClearView(render_target_view, clearColor2, &rect, 1);
+            commandList->ClearRenderTargetView(rtvHandles[frameIndex], clearColor2, 1, &rect);
         }
 
         // TODO: How to enable blending?
@@ -672,28 +1000,52 @@ void render(void)
 
         {
             const FLOAT clearColor3[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-            D3D11_RECT rect;
+            D3D12_RECT rect;
             rect.left = std::max(600L, (LONG)window_width - 200L);
             rect.top = std::max(0L, (LONG)window_height - 200L);
             rect.right = rect.left + 100;
             rect.bottom = rect.top + 100;
 
             // Black from bottom right
-            device_context_11_x->ClearView(render_target_view, clearColor3, &rect, 1);
+            commandList->ClearRenderTargetView(rtvHandles[frameIndex], clearColor3, 1, &rect);
         }
 
     }
 
 
+    // Indicate that the back buffer will be used to present
+
+    {
+        // Create a resource barrier
+        D3D12_RESOURCE_BARRIER resourceBarrierTransitionTargetPresent = {
+            .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+            .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+            .Transition = {
+                .pResource = (ID3D12Resource*)framebuffer[frameIndex],
+                .Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                .StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET,
+                .StateAfter = D3D12_RESOURCE_STATE_PRESENT
+            }
+        };
+
+        commandList->ResourceBarrier(1, &resourceBarrierTransitionTargetPresent);
+    }
 
 
+    commandList->Close();
+
+
+    ID3D12CommandList* ppCommandLists[] = { commandList };
+    commandQueue->ExecuteCommandLists(1, ppCommandLists);
 
     const UINT vsync = 1;
     const UINT presentFlags = 0;
     const DXGI_PRESENT_PARAMETERS presentParameters = {};
 
-    swapchain->Present1(vsync, presentFlags, &presentParameters);
+    swapchain4->Present1(vsync, presentFlags, &presentParameters);
 
+    //WaitForPreviousFrame();
+    WaitForGPU();
 }
 
 
@@ -710,7 +1062,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
       return FALSE;
    }
 
-   InitD3D11();
+   InitD3D12();
 
    ShowWindow(hWnd, nCmdShow);
    UpdateWindow(hWnd);
@@ -788,13 +1140,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 if (DXGI_fullscreen)
                 {
                     // Only when going *into* fullscreen (avoids flicker)
-                    swapchain->ResizeTarget(&target_mode);
+                    swapchain4->ResizeTarget(&target_mode);
                 }
 
-                swapchain->SetFullscreenState(DXGI_fullscreen, nullptr);
+                swapchain4->SetFullscreenState(DXGI_fullscreen, nullptr);
 
 
-
+/*
                 {
                     ID3D11Texture2D* framebuffer;
                     HRESULT result = swapchain->GetBuffer(0, IID_ID3D11Texture2D, (void**)&framebuffer);
@@ -806,6 +1158,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     OutputDebugStringA(msg);
                     framebuffer->Release();
                 }
+*/
 
             }
             return 0;
@@ -823,7 +1176,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             //swapchain_flags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
 
             BOOL is_fullscreen;
-            swapchain->GetFullscreenState(&is_fullscreen, nullptr);
+            swapchain4->GetFullscreenState(&is_fullscreen, nullptr);
 
     #if D3D_SUPPORT_NONPREROTATED
             if (DXGI_fullscreen && is_fullscreen)
@@ -835,11 +1188,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 
             IDXGIOutput* output;
-            swapchain->GetContainingOutput(&output);
+            HRESULT hr = swapchain4->GetContainingOutput(&output);
+            if (FAILED(hr))
+            {
+                // This will fail if the window resides on a display for a different device
+                // TODO: Handle this
+                OutputDebugStringA("Failed to retrieve containing output, window may have moved to a different display/interface?");
+                exit(-1);
+            }
 
             DXGI_OUTPUT_DESC output_desc;
             output->GetDesc(&output_desc);
-
+            output->Release();
 
 
             //this->device_context_11_x->ClearState();
@@ -872,12 +1232,34 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 .Format = DXGI_FORMAT_UNKNOWN
             };
 
-            swapchain->ResizeTarget(&target_mode);
+            swapchain4->ResizeTarget(&target_mode);
 
-            device_context_11_0->OMSetRenderTargets(0, 0, 0);
 
-            // Release all outstanding references to the swap chain's buffers.
-            render_target_view->Release();
+            UINT frameIndex = swapchain4->GetCurrentBackBufferIndex();
+
+
+            // Reset the command list
+            //flushGpu();
+            //WaitForPreviousFrame();
+
+            WaitForGPU();
+
+            // Release the resources holding references to the swap chain (required by ResizeBufers)
+            // and reset the frame fence values to the current fence value
+
+            for (UINT i = 0; i < numFrames; i++)
+            {
+                //framebuffer[i].Reset();  // <-- relies on ComPtr
+                framebuffer[i]->Release();
+                framebuffer[i] = nullptr;
+                
+                fenceValues[i] = fenceValues[frameIndex]; // ??
+            }
+
+
+
+            commandAllocator->Reset();
+            commandList->Reset(commandAllocator, nullptr);            
 
 
             //DXGI_OUTPUT_DESC output_desc;
@@ -885,64 +1267,84 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             //platform_backend_d3d11().d3d11.device_info->dxgiOutput6->GetDesc(&output_desc);
             //dxgiOutput6->GetDesc1(&output_desc1);
 
-            HRESULT hr;
             // Preserve the existing buffer count and format.
             // Automatically choose the width and height to match the client rect for HWNDs.
 
+            swapchain4->ResizeBuffers(numFrames, window_width, window_height, DXGI_FORMAT_UNKNOWN, swapchain_flags);
 
-            //hr = swapchain->ResizeBuffers(0, 0, 0, DXGI_FORMAT_UNKNOWN, swapchain_flags);
-            hr = swapchain->ResizeBuffers(0, window_width, window_height, DXGI_FORMAT_UNKNOWN, swapchain_flags);
-
-            if (!SUCCEEDED(hr))
+            if (FAILED(hr))
             {
                 OutputDebugStringA("Failed to resize swapchain buffer\n");
                 exit(EXIT_FAILURE);
             }
 
+
+            frameIndex = swapchain4->GetCurrentBackBufferIndex();
+
+
             // Get buffer and create a render-target-view.
-            ID3D11Texture2D* pBuffer;
-            hr = swapchain->GetBuffer(0, IID_ID3D11Texture2D, (void**)&pBuffer);
-
-            if (!SUCCEEDED(hr))
             {
-                OutputDebugStringA("Failed to retrieve swapchain buffer\n");
-                exit(EXIT_FAILURE);
+                D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = rtvHeap->GetCPUDescriptorHandleForHeapStart();
+                const UINT incrementSize = device->GetDescriptorHandleIncrementSize(rtvHeapDesc.Type);
+
+                for (uint8_t i = 0; i < numFrames; i++)
+                {
+                    hr = swapchain4->GetBuffer(i, IID_PPV_ARGS(&framebuffer[i]));
+
+                    if (FAILED(hr))
+                    {
+                        OutputDebugStringA("Failed to retrieve swapchain buffer\n");
+                        exit(EXIT_FAILURE);
+                    }
+
+                    D3D12_RESOURCE_DESC1 desc1 = framebuffer[frameIndex]->GetDesc1();
+
+                    //char msg[1024];
+                    snprintf(msg, 1024, "Swapchain buffer[%u] size : %" PRIu64 " x %u\n", i, desc1.Width, desc1.Height);
+                    OutputDebugStringA(msg);
+
+                    device->CreateRenderTargetView(framebuffer[i], &rtvDesc, rtvHandle);
+
+                    if (FAILED(hr))
+                    {
+                        OutputDebugStringA("Failed to create render target view\n");
+                        exit(EXIT_FAILURE);
+                    }
+
+
+                    wchar_t name[32];
+                    wsprintf(name, L"Framebuffer %d of %d", i, numFrames);
+                    framebuffer[i]->SetName(name);
+                    rtvHandles[i] = rtvHandle;
+                    rtvHandle.ptr += incrementSize;
+                }
             }
 
-            D3D11_TEXTURE2D_DESC desc;
-            pBuffer->GetDesc(&desc);
-
-            //char msg[1024];
-            snprintf(msg, 1024, "Swapchain buffer size : %d x %d\n", desc.Width, desc.Height);
-            OutputDebugStringA(msg);
-
-
-
-            hr = device->CreateRenderTargetView(pBuffer, NULL, &render_target_view);
-
-            if (!SUCCEEDED(hr))
-            {
-                OutputDebugStringA("Failed to create render target view\n");
-                exit(EXIT_FAILURE);
-            }
-
-
-            pBuffer->Release();
-
-            device_context_11_0->OMSetRenderTargets(1, &render_target_view, nullptr);
+            // Set render targets
+            commandList->OMSetRenderTargets(1, &rtvHandles[frameIndex], FALSE, nullptr);
 
             // Set up the viewport.
-            D3D11_VIEWPORT vp = {
+            D3D12_VIEWPORT vp = {
                 .Width = (float)window_width,
                 .Height = (float)window_height
             };
 
  
-            vp.MinDepth = 0.0f;
-            vp.MaxDepth = 1.0f;
-            vp.TopLeftX = 0;
-            vp.TopLeftY = 0;
-            device_context_11_0->RSSetViewports(1, &vp);
+            // Set viewports
+            
+            D3D12_VIEWPORT viewport = {
+                0.0f, 0.0f,   // X, Y
+                (FLOAT)window_width,
+                (FLOAT)window_height,
+                0.0f, 1.0f  // DepthMin, DepthMax
+            };
+
+            commandList->RSSetViewports(1, &viewport);
+            commandList->Close();
+            ID3D12CommandList* ppCommandLists[] = { commandList };
+            commandQueue->ExecuteCommandLists(1, ppCommandLists);
+            
+            WaitForGPU();
         }
         return 0;
 
