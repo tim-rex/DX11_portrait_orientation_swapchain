@@ -139,10 +139,10 @@
     <ClCompile Include="DX12_fullscreen_portrait_repro.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="DX11_fullscreen_portrait_repro.rc" />
+    <ResourceCompile Include="DX_fullscreen_portrait_repro.rc" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="DX11_fullscreen_portrait_repro.ico" />
+    <Image Include="DX_fullscreen_portrait_repro.ico" />
     <Image Include="small.ico" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

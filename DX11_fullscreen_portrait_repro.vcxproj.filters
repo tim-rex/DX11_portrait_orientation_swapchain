@@ -34,7 +34,7 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="DX11_fullscreen_portrait_repro.rc">
+    <ResourceCompile Include="DX_fullscreen_portrait_repro.rc">
       <Filter>Resource Files</Filter>
     </ResourceCompile>
   </ItemGroup>
@@ -42,7 +42,7 @@
     <Image Include="small.ico">
       <Filter>Resource Files</Filter>
     </Image>
-    <Image Include="DX11_fullscreen_portrait_repro.ico">
+    <Image Include="DX_fullscreen_portrait_repro.ico">
       <Filter>Resource Files</Filter>
     </Image>
   </ItemGroup>
