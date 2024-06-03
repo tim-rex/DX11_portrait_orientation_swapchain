@@ -24,12 +24,12 @@
     <ClInclude Include="Resource.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="DX11_fullscreen_portrait_repro.h">
+    <ClInclude Include="DX12_fullscreen_portrait_repro.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="DX11_fullscreen_portrait_repro.cpp">
+    <ClCompile Include="DX12_fullscreen_portrait_repro.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

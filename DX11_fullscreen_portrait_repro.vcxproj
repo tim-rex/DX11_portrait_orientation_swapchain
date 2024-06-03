@@ -24,6 +24,7 @@
     <ProjectGuid>{5e6ac05e-b67e-42f1-ade8-b50e8d713abe}</ProjectGuid>
     <RootNamespace>DX11fullscreenportraitrepro</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>DX12_fullscreen_portrait_repro</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -129,13 +130,13 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="DX11_fullscreen_portrait_repro.h" />
+    <ClInclude Include="DX12_fullscreen_portrait_repro.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="DX11_fullscreen_portrait_repro.cpp" />
+    <ClCompile Include="DX12_fullscreen_portrait_repro.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="DX11_fullscreen_portrait_repro.rc" />

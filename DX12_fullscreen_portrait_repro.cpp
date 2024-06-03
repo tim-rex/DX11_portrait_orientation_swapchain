@@ -11,7 +11,7 @@
 
 
 #include "framework.h"
-#include "DX11_fullscreen_portrait_repro.h"
+#include "DX12_fullscreen_portrait_repro.h"
 
 #include <d3d12.h>
 #include <dxgi1_6.h>
