@@ -1270,20 +1270,35 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             swapchain4->ResizeTarget(&target_mode);
 
 
-#if 0   // Not yet operational
-
             UINT frameIndex = swapchain4->GetCurrentBackBufferIndex();
 
 
             // Reset the command list
             //flushGpu();
             //WaitForPreviousFrame();
+
+            WaitForGPU();
+
+            // Release the resources holding references to the swap chain (required by ResizeBufers)
+            // and reset the frame fence values to the current fence value
+
+            for (UINT i = 0; i < numFrames; i++)
+            {
+                //framebuffer[i].Reset();  // <-- relies on ComPtr
+                framebuffer[i]->Release();
+                framebuffer[i] = nullptr;
+                
+                fenceValues[i] = fenceValues[frameIndex]; // ??
+            }
+
+
+
             commandAllocator->Reset();
             commandList->Reset(commandAllocator, nullptr);
 
 
             // Set render targets
-            commandList->OMSetRenderTargets(1, &rtvHandles[frameIndex], FALSE, nullptr);
+            //commandList->OMSetRenderTargets(1, &rtvHandles[frameIndex], FALSE, nullptr);
 
 
             // Release all outstanding references to the swap chain's buffers.
@@ -1309,6 +1324,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 OutputDebugStringA("Failed to resize swapchain buffer\n");
                 exit(EXIT_FAILURE);
             }
+
+
+            frameIndex = swapchain4->GetCurrentBackBufferIndex();
+
 
             // Get buffer and create a render-target-view.
             {
@@ -1350,8 +1369,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             }
 
             commandList->OMSetRenderTargets(1, &rtvHandles[frameIndex], FALSE, nullptr);
-            //device_context_11_0->OMSetRenderTargets(1, &render_target_view, nullptr);
-
 
             // Set up the viewport.
             D3D12_VIEWPORT vp = {
@@ -1370,14 +1387,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             };
 
             commandList->RSSetViewports(1, &viewport);
-            //device_context_11_0->RSSetViewports(1, &vp);
-            //commandList->Close();
-            //ID3D12CommandList* ppCommandLists[] = { commandList };
-            //commandQueue->ExecuteCommandLists(1, ppCommandLists);
+            commandList->Close();
+            ID3D12CommandList* ppCommandLists[] = { commandList };
+            commandQueue->ExecuteCommandLists(1, ppCommandLists);
             
-            //WaitForPreviousFrame();
-#endif
-
+            WaitForGPU();
         }
         return 0;
 
