@@ -162,9 +162,6 @@ void dxgi_debug_pre_device_init()
     // Enable the debug layer
     {
         HRESULT hr = 0;
-
-        //hr = D3D12GetInterface(CLSID_D3D12Debug, IID_ID3D12Debug6, (void**)&debugController6);
-        //hr = D3D12GetInterface(CLSID_D3D12Debug, IID_ID3D12Debug, (void**)&debugController);
         hr = D3D12GetInterface(CLSID_D3D12Debug, IID_PPV_ARGS(&debugController));
 
         if (SUCCEEDED(hr))
@@ -194,13 +191,12 @@ void dxgi_debug_post_device_init()
 
         // for debug builds enable VERY USEFUL debug break on API errors
         {
-            //ID3D12InfoQueue1* info = nullptr;
             ID3D12InfoQueue* info = nullptr;
 
             HRESULT hr = 0;
             hr = device->QueryInterface(IID_PPV_ARGS(&info));
             
-            if (!SUCCEEDED(hr))
+            if (FAILED(hr))
             {
                 OutputDebugStringA("Failed to query interface for ID3D12InfoQueue from device, did you EnableDebugLayer?");
                 exit(-1);
@@ -211,7 +207,7 @@ void dxgi_debug_post_device_init()
             ID3D12InfoQueue1*info1;
             hr = info->QueryInterface(IID_PPV_ARGS(&info1));
 
-            if (!SUCCEEDED(hr))
+            if (FAILED(hr))
             {
                 OutputDebugStringA("Failed to query interface for ID3D12InfoQueue1 from ID3D12InfoQueue");
                 exit(-1);
@@ -295,17 +291,11 @@ ID3D12DescriptorHeap* rtvHeap = nullptr;
 ID3D12Resource2* framebuffer[numFrames] = {};
 
 
-// We need a command list
-/*
-device->CreateCommandList();
-device->CreateCommandList1();
-device->CreateCommandQueue();
-device->CreateCommandQueue1();
-*/
-
+// We need a command allocater + command list
 ID3D12CommandAllocator* commandAllocator = nullptr;
 ID3D12GraphicsCommandList* commandList = nullptr;
 
+// TODO: We're not yet using a custom pipeline state
 ID3D12PipelineState* pipelineState = nullptr;
 
 
@@ -350,7 +340,7 @@ void InitD3D12(void)
     IDXGIFactory7* pFactory;
     result = CreateDXGIFactory2(flags, IID_PPV_ARGS(&pFactory));
 
-    if (!SUCCEEDED(result))
+    if (FAILED(result))
     {
         exit(EXIT_FAILURE);
     }
@@ -396,12 +386,9 @@ void InitD3D12(void)
 
     }
 
-    //result = D3D12CreateDevice(dxgiAdapter, D3D_FEATURE_LEVEL_11_0, IID_ID3D12Device10, (void **) & device);
-    //result = D3D12CreateDevice(dxgiAdapter, D3D_FEATURE_LEVEL_11_0, IID_ID3D12Device, (void**)&device);
     result = D3D12CreateDevice(dxgiAdapter, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device) );
     
-
-    if (!SUCCEEDED(result))
+    if (FAILED(result))
     {
         OutputDebugStringA("Failed D3D12CreateDevice\n");
         exit(EXIT_FAILURE);
@@ -411,7 +398,7 @@ void InitD3D12(void)
     LUID luid = device->GetAdapterLuid();
     result = pFactory->EnumAdapterByLuid(luid, IID_PPV_ARGS(&dxgiAdapter));
 
-    if (!SUCCEEDED(result))
+    if (FAILED(result))
     {
         OutputDebugStringA("Failed to enumerate Adapter from device LUID\n");
         exit(EXIT_FAILURE);
@@ -494,7 +481,7 @@ void InitD3D12(void)
 
         result = dxgiOutput->QueryInterface(IID_PPV_ARGS(&dxgiOutput6));
 
-        if (!SUCCEEDED(result))
+        if (FAILED(result))
         {
             OutputDebugStringA("Failed to query dxgiOutput6 from dxgiOutput\n");
             exit(EXIT_FAILURE);
@@ -502,7 +489,7 @@ void InitD3D12(void)
 
         result = dxgiOutput6->CheckHardwareCompositionSupport((UINT*)&hardware_composition_support);
 
-        if (!SUCCEEDED(result))
+        if (FAILED(result))
         {
             OutputDebugStringA("Failed to query hardware composition support from dxgiOutput6\n");
             exit(EXIT_FAILURE);
@@ -653,7 +640,7 @@ void InitD3D12(void)
 
 
         result = swapchain1->QueryInterface(IID_PPV_ARGS(&swapchain4));
-        if (!SUCCEEDED(result))
+        if (FAILED(result))
         {
             OutputDebugStringA("Failed to query for IDXGISwapChain4 from IDXGISwapChain1\n");
             exit(EXIT_FAILURE);
@@ -662,7 +649,7 @@ void InitD3D12(void)
         UINT frameIndex = swapchain4->GetCurrentBackBufferIndex();
         
 
-        if (!SUCCEEDED(result))
+        if (FAILED(result))
         {
             OutputDebugStringA("Failed to CreateSwapChainForHwnd from dxgiFactory\n");
             exit(EXIT_FAILURE);
@@ -676,7 +663,7 @@ void InitD3D12(void)
         dxgiAdapter->Release();
         //dxgiDevice->Release();
 
-        assert(S_OK == result && swapchain4 && device);
+        assert(SUCCEEDED(result) && swapchain4 && device);
     
         // First obtain the framebuffer images from the swapchain
 
@@ -747,7 +734,7 @@ void InitD3D12(void)
         result = device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&rtvHeap));
         rtvHeap->SetName(L"rtvDescriptorHeap");
 
-        if (!SUCCEEDED(result))
+        if (FAILED(result))
         {
             OutputDebugStringA("Failed to CreateDescriptorHeap\n");
             exit(EXIT_FAILURE);
@@ -806,7 +793,7 @@ void InitD3D12(void)
     {
         HRESULT result = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&commandAllocator));
 
-        if (!SUCCEEDED(result))
+        if (FAILED(result))
         {
             OutputDebugStringA("Failed to CreateCommandAllocator\n");
             exit(EXIT_FAILURE);
@@ -823,7 +810,7 @@ void InitD3D12(void)
 
         HRESULT result = device->CreatePipelineState(desc, IID_PPV_ARGS(&pipelineState));
 
-        if (!SUCCEEDED(result))
+        if (FAILED(result))
         {
             OutputDebugStringA("Failed to CreatePipelineState\n");
             exit(EXIT_FAILURE);
@@ -837,7 +824,7 @@ void InitD3D12(void)
     {
         HRESULT result = device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, commandAllocator, pipelineState, IID_PPV_ARGS(&commandList));
 
-        if (!SUCCEEDED(result))
+        if (FAILED(result))
         {
             OutputDebugStringA("Failed to CreateCommandList\n");
             exit(EXIT_FAILURE);
@@ -1051,28 +1038,6 @@ void render(void)
     ID3D12CommandList* ppCommandLists[] = { commandList };
     commandQueue->ExecuteCommandLists(1, ppCommandLists);
 
-    /*  The fix here, we needed to set a resource barrier at the start/end of the commandList to indicate a state transition from PRESENT to RENDER_TARGET, and at the end from RENDER_TARGET to PRESENT
-
-    * D3D12 ERROR: ID3D12CommandQueue::ExecuteCommandLists: Using ClearRenderTargetView on Command List (0x000001C6EA147D30:'Unnamed ID3D12GraphicsCommandList Object'):
-          Resource state (0x0: D3D12_RESOURCE_STATE_[COMMON|PRESENT]) of resource (0x000001C6EA11A530:'Unnamed ID3D12Resource Object') (subresource: 0) is invalid for use as a render target.
-          Expected State Bits (all): 0x4: D3D12_RESOURCE_STATE_RENDER_TARGET,
-          Actual State: 0x0: D3D12_RESOURCE_STATE_[COMMON|PRESENT],
-          Missing State: 0x4: D3D12_RESOURCE_STATE_RENDER_TARGET. [ EXECUTION ERROR #538: INVALID_SUBRESOURCE_STATE]
-
-    */
-
-
-    // Probably we need to reset some state, or otherwise wait for the frame to be marked as complete (WaitForFrame())
-    /*
-    *
-    * D3D12 ERROR: ID3D12CommandQueue::ExecuteCommandLists: A command list, which writes to a swapchain back buffer, may only be executed when that back buffer is the back buffer
-        that will be presented during the next call to Present*.
-        Such a back buffer is also referred to as the "current back buffer".
-        Swap Chain: 0x0000021A24B53BF0:'Unnamed Object' - Current Back Buffer Buffer: 0x0000021A24BB8990:'Unnamed ID3D12Resource Object' -
-    */
-
-
-
     const UINT vsync = 1;
     const UINT presentFlags = 0;
     const DXGI_PRESENT_PARAMETERS presentParameters = {};
@@ -1224,9 +1189,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             IDXGIOutput* output;
             HRESULT hr = swapchain4->GetContainingOutput(&output);
-            if (!SUCCEEDED(hr))
+            if (FAILED(hr))
             {
-                // This will fail if the window resides on a display for a differencedevice
+                // This will fail if the window resides on a display for a different device
                 // TODO: Handle this
                 OutputDebugStringA("Failed to retrieve containing output, window may have moved to a different display/interface?");
                 exit(-1);
@@ -1294,15 +1259,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 
             commandAllocator->Reset();
-            commandList->Reset(commandAllocator, nullptr);
-
-
-            // Set render targets
-            //commandList->OMSetRenderTargets(1, &rtvHandles[frameIndex], FALSE, nullptr);
-
-
-            // Release all outstanding references to the swap chain's buffers.
-            //render_target_view->Release();
+            commandList->Reset(commandAllocator, nullptr);            
 
 
             //DXGI_OUTPUT_DESC output_desc;
@@ -1313,13 +1270,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             // Preserve the existing buffer count and format.
             // Automatically choose the width and height to match the client rect for HWNDs.
 
-
             swapchain4->ResizeBuffers(numFrames, window_width, window_height, DXGI_FORMAT_UNKNOWN, swapchain_flags);
 
-            //hr = swapchain->ResizeBuffers(0, 0, 0, DXGI_FORMAT_UNKNOWN, swapchain_flags);
-            //hr = swapchain->ResizeBuffers(0, window_width, window_height, DXGI_FORMAT_UNKNOWN, swapchain_flags);
-
-            if (!SUCCEEDED(hr))
+            if (FAILED(hr))
             {
                 OutputDebugStringA("Failed to resize swapchain buffer\n");
                 exit(EXIT_FAILURE);
@@ -1338,7 +1291,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 {
                     hr = swapchain4->GetBuffer(i, IID_PPV_ARGS(&framebuffer[i]));
 
-                    if (!SUCCEEDED(hr))
+                    if (FAILED(hr))
                     {
                         OutputDebugStringA("Failed to retrieve swapchain buffer\n");
                         exit(EXIT_FAILURE);
@@ -1351,9 +1304,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     OutputDebugStringA(msg);
 
                     device->CreateRenderTargetView(framebuffer[i], &rtvDesc, rtvHandle);
-                    //hr = device->CreateRenderTargetView(pBuffer, NULL, &render_target_view);
 
-                    if (!SUCCEEDED(hr))
+                    if (FAILED(hr))
                     {
                         OutputDebugStringA("Failed to create render target view\n");
                         exit(EXIT_FAILURE);
@@ -1368,6 +1320,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 }
             }
 
+            // Set render targets
             commandList->OMSetRenderTargets(1, &rtvHandles[frameIndex], FALSE, nullptr);
 
             // Set up the viewport.
