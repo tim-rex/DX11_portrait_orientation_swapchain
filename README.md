@@ -16,7 +16,7 @@ The PR will remain unmerged until we can get further clarity. In the meantime, b
 The mitigation here is to build the swapchain using `DXGI_SCALING_STRETCH` however:
 - My understanding is this should not be required in DX11
 - Documentation indicates that an application <i>"does not need to worry about monitor orientation"</i> but that isn't strictly true it seems
-- This is not required in portrait orientation
+- This is not required in landscape orientation
 - This does not seem to be required in DX12 (likely due to explicit handling of swapchain image transitions)
 
 
