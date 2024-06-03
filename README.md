@@ -4,11 +4,20 @@ This repository contains a minimal repro of an issue that prevents fullscreen sw
 Note that this is *not* production quality code by any stretch.
 It represents a simple minimal repro of an issue I'm having elsewhere. It does not pretend to follow any reasonable coding standard :)
 
-# Possible Fix
+# The Issue
+In DX11, creating a swapchain with `DXGI_SCALING_NONE` causes a <b>fullscreen</b> swapchain against a **portrait** orientation display to be incorrectly scaled
+
+# Mitigation
 See <a href="https://github.com/tim-rex/DX11_portrait_orientation_swapchain/pull/2">this</a> pull request, based directly from <a href="https://github.com/tim-rex/DX11_portrait_orientation_swapchain/tree/DX11_portrait_fullscreen_workaround">this</a> branch
 
 See the pull request notes for a deeper dive and discussion on wether or not this is a code issue, a documentation issue, or a DXGI issue.
 The PR will remain unmerged until we can get further clarity. In the meantime, borderless fullscreen should pose no such issue.. Alternatively we should also be exploring `DXGI_SWAP_CHAIN_FLAG_NONPREROTATED` regardless
+
+The mitigation here is to build the swapchain using `DXGI_SCALING_STRETCH` however:
+- My understanding is this should not be required in DX11
+- Documentation indicates that an application <i>"does not need to worry about monitor orientation"</i> but that isn't strictly true it seems
+- This is not required in portrait orientation
+- This does not seem to be required in DX12 (likely due to explicit handling of swapchain image transitions)
 
 
 # Building
