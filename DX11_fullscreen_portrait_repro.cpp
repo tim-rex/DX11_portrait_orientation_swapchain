@@ -310,7 +310,8 @@ ID3D12PipelineState* pipelineState = nullptr;
 
 
 ID3D12Fence1* fence = nullptr;
-UINT64 fenceValue = 0;
+UINT64 fenceValues[numFrames];
+
 HANDLE fenceEvent = INVALID_HANDLE_VALUE;
 
 D3D12_CPU_DESCRIPTOR_HANDLE rtvHandles[numFrames];
@@ -782,8 +783,8 @@ void InitD3D12(void)
 
         // We need a fence to signal when the frame has rendered
         {
-            device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
-            fenceValue = 1;
+            device->CreateFence(fenceValues[frameIndex], D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
+            fenceValues[frameIndex]++;
 
             // TODO: This is a windows native event
             // Ref: https://learn.microsoft.com/en-us/windows/win32/sync/using-event-objects
@@ -848,6 +849,39 @@ void InitD3D12(void)
 }
 
 
+#if 1
+void WaitForGPU(void)
+{
+    UINT frameIndex = swapchain4->GetCurrentBackBufferIndex();
+
+    commandQueue->Signal(fence, fenceValues[frameIndex]);
+
+    fence->SetEventOnCompletion(fenceValues[frameIndex], fenceEvent);
+    WaitForSingleObjectEx(fenceEvent, INFINITE, FALSE);
+
+    // Increment the fence value for the current fram
+    fenceValues[frameIndex]++;
+}
+
+/*
+void flushGpu()
+{
+    //for (int i = 0; i < numFrames; i++)
+    {
+        uint64_t fenceValueForSignal = ++fenceValue;
+        commandQueue->Signal(fence, fenceValueForSignal);
+        if (fence->GetCompletedValue() < fenceValue)
+        {
+            fence->SetEventOnCompletion(fenceValueForSignal, fenceEvent);
+            WaitForSingleObject(fenceEvent, INFINITE);
+        }
+    }
+    //frameIndex = 0;
+}
+*/
+
+
+#else
 void WaitForPreviousFrame(void)
 {
     // TODO: WAITING FOR THE FRAME TO COMPLETE BEFORE CONTIUING IS NOT BEST PRACTICE.
@@ -868,22 +902,7 @@ void WaitForPreviousFrame(void)
     // TODO: Relies on swapchain3, where does that live?
     UINT frameIndex = swapchain4->GetCurrentBackBufferIndex();
 }
-
-
-void flushGpu()
-{
-    //for (int i = 0; i < numFrames; i++)
-    {
-        uint64_t fenceValueForSignal = ++fenceValue;
-        commandQueue->Signal(fence, fenceValueForSignal);
-        if (fence->GetCompletedValue() < fenceValue)
-        {
-            fence->SetEventOnCompletion(fenceValueForSignal, fenceEvent);
-            WaitForSingleObject(fenceEvent, INFINITE);
-        }
-    }
-    //frameIndex = 0;
-}
+#endif
 
 
 void render(void)
@@ -1060,7 +1079,8 @@ void render(void)
 
     swapchain4->Present1(vsync, presentFlags, &presentParameters);
 
-    WaitForPreviousFrame();
+    //WaitForPreviousFrame();
+    WaitForGPU();
 }
 
 
