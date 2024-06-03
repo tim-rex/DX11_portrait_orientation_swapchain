@@ -1,17 +1,17 @@
 //{{NO_DEPENDENCIES}}
 // Microsoft Visual C++ generated include file.
-// Used by DX11_fullscreen_portrait_repro.rc
+// Used by DX_fullscreen_portrait_repro.rc
 
 #define IDS_APP_TITLE			103
 
 #define IDR_MAINFRAME			128
-#define IDD_DX11FULLSCREENPORTRAITREPRO_DIALOG	102
+#define IDD_DXFULLSCREENPORTRAITREPRO_DIALOG	102
 #define IDD_ABOUTBOX			103
 #define IDM_ABOUT				104
 #define IDM_EXIT				105
-#define IDI_DX11FULLSCREENPORTRAITREPRO			107
+#define IDI_DXFULLSCREENPORTRAITREPRO			107
 #define IDI_SMALL				108
-#define IDC_DX11FULLSCREENPORTRAITREPRO			109
+#define IDC_DXFULLSCREENPORTRAITREPRO			109
 #define IDC_MYICON				2
 #ifndef IDC_STATIC
 #define IDC_STATIC				-1

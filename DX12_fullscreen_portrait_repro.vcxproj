@@ -22,7 +22,7 @@
     <VCProjectVersion>17.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{5e6ac05e-b67e-42f1-ade8-b50e8d713abe}</ProjectGuid>
-    <RootNamespace>DX11fullscreenportraitrepro</RootNamespace>
+    <RootNamespace>DX12fullscreenportraitrepro</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
     <ProjectName>DX12_fullscreen_portrait_repro</ProjectName>
   </PropertyGroup>
