@@ -371,6 +371,9 @@ void InitD3D12(void)
         ++i;
     }
 
+    // Uncomment to force skipping over Radeon RX 580 Series GPU
+    // Purely a quick hack to prioritise secondary GPU
+#if 0
     for (auto adapter : vAdapters)
     {
         DXGI_ADAPTER_DESC1 adapterDesc1;
@@ -383,8 +386,8 @@ void InitD3D12(void)
 
         dxgiAdapter = (IDXGIAdapter4 *) adapter;
         break;
-
     }
+#endif
 
     result = D3D12CreateDevice(dxgiAdapter, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device) );
     
