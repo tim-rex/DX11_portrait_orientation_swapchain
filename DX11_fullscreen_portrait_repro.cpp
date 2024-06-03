@@ -131,36 +131,34 @@ ID3D12Device4* device = nullptr;       // CreateCommandList1
 //ID3D12Device1* device = nullptr;
 
 //ID3D12Device* device = nullptr;
-ID3D12Resource2* resource2 = nullptr;
+// 
+//ID3D12Resource2* resource2 = nullptr;
 
 //IDXGISwapChain1* swapchain = nullptr;
 IDXGISwapChain4* swapchain4 = nullptr;
 
 ID3D12Resource2* render_target_view = nullptr;
 
-D3D_FEATURE_LEVEL feature_level;
 
 UINT window_width = 0;
 UINT window_height = 0;
 BOOL DXGI_fullscreen = false;
 BOOL allowTearing = false;
 
-#ifndef NDEBUG
-//ID3D12Debug6* debugController;
-//ID3D12Debug5* debugController;
-//ID3D12Debug4* debugController;
-ID3D12Debug3* debugController;
-//ID3D12Debug2* debugController;
-//ID3D12Debug1* debugController;
-//ID3D12Debug* debugController;
-#endif
 
 void dxgi_debug_pre_device_init()
 {
     //assert(device);
 
-
 #ifndef NDEBUG
+    //ID3D12Debug6* debugController;
+    //ID3D12Debug5* debugController;
+    //ID3D12Debug4* debugController;
+    ID3D12Debug3* debugController;
+    //ID3D12Debug2* debugController;
+    //ID3D12Debug1* debugController;
+    //ID3D12Debug* debugController;
+    
     // Enable the debug layer
     {
         HRESULT hr = 0;
@@ -200,20 +198,27 @@ void dxgi_debug_post_device_init()
             ID3D12InfoQueue* info = nullptr;
 
             HRESULT hr = 0;
-
-            ID3D12Debug1 *debug1;
-            hr = debugController->QueryInterface(IID_PPV_ARGS(&debug1));
-
-            //hr = device->QueryInterface(IID_ID3D12InfoQueue1, (void**)&info);
-            //hr = device->QueryInterface(IID_ID3D12InfoQueue, (void**)&info);
             hr = device->QueryInterface(IID_PPV_ARGS(&info));
             
             if (!SUCCEEDED(hr))
             {
-                OutputDebugStringA("Failed to query interface for ID3D12InfoQueue1 from device, did you EnableDebugLayer?");
+                OutputDebugStringA("Failed to query interface for ID3D12InfoQueue from device, did you EnableDebugLayer?");
                 exit(-1);
             }
             assert(info);
+
+#if 0
+            ID3D12InfoQueue1*info1;
+            hr = info->QueryInterface(IID_PPV_ARGS(&info1));
+
+            if (!SUCCEEDED(hr))
+            {
+                OutputDebugStringA("Failed to query interface for ID3D12InfoQueue1 from ID3D12InfoQueue");
+                exit(-1);
+            }
+            assert(info1);
+#endif
+
 
             info->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE);
             info->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, TRUE);
