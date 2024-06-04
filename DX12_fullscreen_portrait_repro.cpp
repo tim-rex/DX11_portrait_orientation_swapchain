@@ -171,7 +171,7 @@ void dxgi_debug_pre_device_init()
         else
         {
             OutputDebugStringA("Failed to obtain D3D12Debug interface");
-            exit(-1);
+            exit(EXIT_FAILURE);
         }
 
 
@@ -199,7 +199,7 @@ void dxgi_debug_post_device_init()
             if (FAILED(hr))
             {
                 OutputDebugStringA("Failed to query interface for ID3D12InfoQueue from device, did you EnableDebugLayer?");
-                exit(-1);
+                exit(EXIT_FAILURE);
             }
             assert(info);
 
@@ -210,7 +210,7 @@ void dxgi_debug_post_device_init()
             if (FAILED(hr))
             {
                 OutputDebugStringA("Failed to query interface for ID3D12InfoQueue1 from ID3D12InfoQueue");
-                exit(-1);
+                exit(EXIT_FAILURE);
             }
             assert(info1);
 #endif
@@ -785,7 +785,7 @@ void InitD3D12(void)
             if (fenceEvent == nullptr)
             {
                 OutputDebugStringA("Failed to create fence event");
-                exit(-1);
+                exit(EXIT_FAILURE);
             }
         }
 
@@ -1197,7 +1197,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 // This will fail if the window resides on a display for a different device
                 // TODO: Handle this
                 OutputDebugStringA("Failed to retrieve containing output, window may have moved to a different display/interface?");
-                exit(-1);
+                exit(EXIT_FAILURE);
             }
 
             DXGI_OUTPUT_DESC output_desc;
