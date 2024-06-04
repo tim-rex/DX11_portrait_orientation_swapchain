@@ -666,11 +666,17 @@ void InitShaders(void)
             float4 colour : COLOR0;
         };
 
+
+        float2 pixelCoordToNCD(float2 pixel) {
+            float2 ncd = ( (pixel / float2(width, height)) - float2(0.5, 0.5)) * 2;
+            return ncd;
+        }
+
         vs_out vs_main(vs_in input) {
           vs_out output = (vs_out)0; // zero the memory first
 
 
-          // Middle triangle
+          // Center triangle
 
           if (input.vertexId == 0)
               output.pos = float4(0.5, -0.5, 0.5, 1.0);
@@ -678,7 +684,6 @@ void InitShaders(void)
               output.pos = float4(-0.5, -0.5, 0.5, 1.0);
           else if (input.vertexId == 2)
               output.pos = float4(0.0, 0.5, 0.5, 1.0);
-
 
 
           // Top Left triangle
@@ -726,14 +731,12 @@ void InitShaders(void)
 
           float2 center = float2(width / 2, height / 2);
 
-          float2 topleft = (((float2( (width / 2) - 50, (height / 2) + 50 )) / float2(width, height)) - float2(0.5, 0.5)) * 2;
-          float2 topright = (((float2( (width / 2) + 50, (height / 2) + 50 )) / float2(width, height)) - float2(0.5, 0.5)) * 2;
+          float2 topleft     = pixelCoordToNCD(center + float2(-50, +50));
+          float2 topright    = pixelCoordToNCD(center + float2(+50, +50));
 
-          float2 bottomleft = (((float2( (width / 2) - 50, (height / 2) - 50 )) / float2(width, height)) - float2(0.5, 0.5)) * 2;
-          float2 bottomright = (((float2( (width / 2) + 50, (height / 2) - 50 )) / float2(width, height)) - float2(0.5, 0.5)) * 2;
+          float2 bottomleft  = pixelCoordToNCD(center + float2(-50, -50));
+          float2 bottomright = pixelCoordToNCD(center + float2(+50, -50));
           
-          // Top Left triangle
-
           if (input.vertexId == 15)
               output.pos = float4(topleft, 0.5, 1.0);
           else if (input.vertexId == 16)
