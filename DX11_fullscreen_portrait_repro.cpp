@@ -22,6 +22,7 @@
 #include <assert.h>
 #include <vector>
 
+#include "d3dcompiler.h"
 
 #define ARRAY_COUNT(array) \
     (sizeof(array) / (sizeof(array[0]) * (sizeof(array) != sizeof(void *) || sizeof(array[0]) <= sizeof(void *))))
@@ -121,6 +122,22 @@ UINT window_width = 0;
 UINT window_height = 0;
 BOOL DXGI_fullscreen = false;
 BOOL allowTearing = false;
+
+
+
+ID3D11Buffer* shaderConstantBuffer_dims = NULL;
+
+// Define the constant data used to communicate with shaders.
+struct VS_CONSTANT_BUFFER
+{
+    float width;
+    float height;
+    float _padding0;    // Buffer must be a multiple of 16 bytes
+    float _padding1;
+} VS_CONSTANT_BUFFER;
+
+struct VS_CONSTANT_BUFFER VsConstData_dims = {};
+
 
 
 void dxgi_debug_init()
@@ -625,6 +642,316 @@ void InitD3D11(void)
 }
 
 
+ID3D11InputLayout* input_layout_ptr = NULL;
+
+
+
+void InitShaders(void)
+{
+
+#if 0
+    const char *shaderSource = R"(
+        /* vertex attributes go here to input to the vertex shader */
+        struct vs_in {
+            float3 position_local : POS;
+        };
+
+        /* outputs from vertex shader go here. can be interpolated to pixel shader */
+        struct vs_out {
+            float4 position_clip : SV_POSITION; // required output of VS
+        };
+
+        vs_out vs_main(vs_in input) {
+          vs_out output = (vs_out)0; // zero the memory first
+          output.position_clip = float4(input.position_local, 1.0);
+          return output;
+        }
+
+        float4 ps_main(vs_out input) : SV_TARGET {
+          return float4( 1.0, 0.0, 1.0, 1.0 ); // must return an RGBA colour
+        }
+)";
+
+#else
+
+    const char* shaderSource = R"(
+
+        cbuffer ConstantBuffer : register( b0 ) {
+            float width;
+            float height;
+            float padding0;
+            float padding1;
+        };
+
+        /* vertex attributes go here to input to the vertex shader */
+        struct vs_in {
+            uint vertexId : SV_VertexID;
+        };
+
+        /* outputs from vertex shader go here. can be interpolated to pixel shader */
+        struct vs_out {
+            float4 pos : SV_POSITION; // required output of VS
+            float4 colour : COLOR0;
+        };
+
+        vs_out vs_main(vs_in input) {
+          vs_out output = (vs_out)0; // zero the memory first
+
+
+          // Middle triangle
+
+          if (input.vertexId == 0)
+              output.pos = float4(0.5, -0.5, 0.5, 1.0);
+          else if (input.vertexId == 1)
+              output.pos = float4(-0.5, -0.5, 0.5, 1.0);
+          else if (input.vertexId == 2)
+              output.pos = float4(0.0, 0.5, 0.5, 1.0);
+
+
+
+          // Top Left triangle
+
+          if (input.vertexId == 3)
+              output.pos = float4(-0.9, 0.9, 0.5, 1.0);
+          else if (input.vertexId == 4)
+              output.pos = float4(-0.8, 0.9, 0.5, 1.0);
+          else if (input.vertexId == 5)
+              output.pos = float4(-0.9, 0.8, 0.5, 1.0);
+
+
+          // Top Right triangle
+
+          if (input.vertexId == 6)
+              output.pos = float4(0.9, 0.9, 0.5, 1.0);
+          else if (input.vertexId == 7)
+              output.pos = float4(0.9, 0.8, 0.5, 1.0);
+          else if (input.vertexId == 8)
+              output.pos = float4(0.8, 0.9, 0.5, 1.0);
+
+
+          // Bottom Left triangle
+
+          if (input.vertexId == 9)
+              output.pos = float4(-0.9, -0.8, 0.5, 1.0);
+          else if (input.vertexId == 10)
+              output.pos = float4(-0.8, -0.9, 0.5, 1.0);
+          else if (input.vertexId == 11)
+              output.pos = float4(-0.9, -0.9, 0.5, 1.0);
+
+
+          // Bottom Right triangle
+
+          if (input.vertexId == 12)
+              output.pos = float4(0.9, -0.8, 0.5, 1.0);
+          else if (input.vertexId == 13)
+              output.pos = float4(0.9, -0.9, 0.5, 1.0);
+          else if (input.vertexId == 14)
+              output.pos = float4(0.8, -0.9, 0.5, 1.0);
+
+
+          // Now, using the frame dimensions, a solitary fixed dimension square 100x100 in the middle of the screen
+          // The pixel dimensions need to be scaled against the NDC space
+
+          float2 center = float2(width / 2, height / 2);
+
+          float2 topleft = (((float2( (width / 2) - 50, (height / 2) + 50 )) / float2(width, height)) - float2(0.5, 0.5)) * 2;
+          float2 topright = (((float2( (width / 2) + 50, (height / 2) + 50 )) / float2(width, height)) - float2(0.5, 0.5)) * 2;
+
+          float2 bottomleft = (((float2( (width / 2) - 50, (height / 2) - 50 )) / float2(width, height)) - float2(0.5, 0.5)) * 2;
+          float2 bottomright = (((float2( (width / 2) + 50, (height / 2) - 50 )) / float2(width, height)) - float2(0.5, 0.5)) * 2;
+          
+          // Top Left triangle
+
+          if (input.vertexId == 15)
+              output.pos = float4(topleft, 0.5, 1.0);
+          else if (input.vertexId == 16)
+              output.pos = float4(topright, 0.5, 1.0);
+          else if (input.vertexId == 17)
+              output.pos = float4(bottomleft, 0.5, 1.0);
+
+          else if (input.vertexId == 18)
+              output.pos = float4(topright, 0.5, 1.0);
+          else if (input.vertexId == 19)
+              output.pos = float4(bottomright, 0.5, 1.0);
+          else if (input.vertexId == 20)
+              output.pos = float4(bottomleft, 0.5, 1.0);
+
+          
+          if (input.vertexId >= 15)
+              output.colour = float4(1.0, 1.0, 0.0, 1.0);
+          else
+              output.colour = clamp(output.pos, 0, 1);
+          return output;
+        }
+
+
+
+        struct ps_in {
+            float4 pos :  SV_POSITION;
+            linear float4 colour : COLOR0;
+        };
+
+        struct ps_out {
+            float4 colour : SV_TARGET;
+        };
+
+        ps_out ps_main(ps_in input) {
+            ps_out output;
+            output.colour = input.colour;
+            //output.colour = float4(1.0, 1.0, 0.0, 1.0);
+            return output;
+        }
+
+)";
+#endif
+
+
+    UINT flags = D3DCOMPILE_ENABLE_STRICTNESS;
+#if defined( DEBUG ) || defined( _DEBUG )
+    flags |= D3DCOMPILE_DEBUG; // add more debug output
+#endif
+
+    ID3DBlob* vs_blob_ptr = NULL, * ps_blob_ptr = NULL, * error_blob = NULL;
+
+    HRESULT hr = 0;
+    hr = D3DCompile(shaderSource, strlen(shaderSource), "basic vertex shader", nullptr, nullptr,
+        "vs_main",
+        "vs_5_0",
+        flags, 
+        0,
+        &vs_blob_ptr,
+        &error_blob);
+
+    if (FAILED(hr))
+    {
+        OutputDebugStringA("Failed to compile vertex shader\n");
+        if (error_blob)
+            OutputDebugStringA((char*)error_blob->GetBufferPointer());
+        exit(EXIT_FAILURE);
+    }
+
+
+    hr = D3DCompile(shaderSource, strlen(shaderSource), "basic pixel shader", nullptr, nullptr,
+        "ps_main",
+        "ps_5_0",
+        flags,
+        0,
+        &ps_blob_ptr,
+        &error_blob);
+
+    if (FAILED(hr))
+    {
+        OutputDebugStringA("Failed to compile pixel shader\n");
+        if (error_blob)
+            OutputDebugStringA((char*)error_blob->GetBufferPointer());
+        exit(EXIT_FAILURE);
+    }
+
+    if (error_blob) error_blob->Release();
+
+
+    ID3D11VertexShader* vertex_shader_ptr = NULL;
+    ID3D11PixelShader* pixel_shader_ptr = NULL;
+
+    hr = device->CreateVertexShader(
+        vs_blob_ptr->GetBufferPointer(),
+        vs_blob_ptr->GetBufferSize(),
+        NULL,
+        &vertex_shader_ptr);
+    assert(SUCCEEDED(hr));
+
+    hr = device->CreatePixelShader(
+        ps_blob_ptr->GetBufferPointer(),
+        ps_blob_ptr->GetBufferSize(),
+        NULL,
+        &pixel_shader_ptr);
+    assert(SUCCEEDED(hr));
+
+    if (error_blob) error_blob->Release();
+
+
+    // Skipping input layout, we're not going to use vertex buffers but let the shader do all the work
+
+    // Bind the shaders to the context
+    device_context_11_x->VSSetShader(vertex_shader_ptr, NULL, 0);
+    device_context_11_x->PSSetShader(pixel_shader_ptr, NULL, 0);
+
+
+    // Seems we still require an Input Assembler
+
+
+    /*
+    *       { "SV_VertexID", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+
+                struct vs_in {
+            uint vertexId : SV_VertexID;
+        };
+    */
+
+#if 0
+    /*
+    //D3D11_INPUT_ELEMENT_DESC inputElementDesc[0] = {};
+
+    hr = device->CreateInputLayout(
+        nullptr,
+        0,
+        vs_blob_ptr->GetBufferPointer(),
+        vs_blob_ptr->GetBufferSize(),
+        &input_layout_ptr);
+    assert(SUCCEEDED(hr));
+    */
+    input_layout_ptr = nullptr;
+
+#else
+    D3D11_INPUT_ELEMENT_DESC inputElementDesc[] = {
+      { "POS", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+      /*
+      { "COL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+      { "NOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+      { "TEX", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+      */
+    };
+
+    hr = device->CreateInputLayout(
+        inputElementDesc,
+        ARRAYSIZE(inputElementDesc),
+        vs_blob_ptr->GetBufferPointer(),
+        vs_blob_ptr->GetBufferSize(),
+        &input_layout_ptr);
+    assert(SUCCEEDED(hr));
+
+#endif
+
+    // Create a constant buffer (for framebuffer dimensions
+
+    {
+        // Fill in a buffer description.
+        D3D11_BUFFER_DESC VsConstData_dims_desc = {
+            .ByteWidth = sizeof(VS_CONSTANT_BUFFER),
+            .Usage = D3D11_USAGE_DYNAMIC,
+            .BindFlags = D3D11_BIND_CONSTANT_BUFFER,
+            .CPUAccessFlags = D3D11_CPU_ACCESS_WRITE,
+            .MiscFlags = 0,
+            .StructureByteStride = 0
+        };
+
+        D3D11_SUBRESOURCE_DATA InitData = {
+            .pSysMem = &VsConstData_dims,
+            .SysMemPitch = 0,
+            .SysMemSlicePitch = 0
+        };
+
+        hr = device->CreateBuffer(&VsConstData_dims_desc, &InitData, &shaderConstantBuffer_dims);
+
+        if (FAILED(hr))
+        {
+            OutputDebugStringA("Failed to create constant buffer");
+            exit(EXIT_FAILURE);
+        }
+    }
+
+}
+
 void render(void)
 {
     // Clear the backbuffer entirely
@@ -719,6 +1046,44 @@ void render(void)
 
 
 
+    // Draw something, we don't use vertex buffers - all the magic happens in the vertex shader
+
+    device_context_11_x->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+    // Seems we still require an Input Assembler
+    //device_context_11_x->IASetInputLayout(input_layout_ptr);
+
+    device_context_11_x->IASetVertexBuffers(0, 0, nullptr, 0, 0);
+    device_context_11_x->IASetIndexBuffer(nullptr, DXGI_FORMAT_UNKNOWN, 0);
+    device_context_11_x->IASetInputLayout(nullptr);    
+
+
+    VsConstData_dims.width = (float)window_width;
+    VsConstData_dims.height = (float)window_height;
+
+    // We must use MAP to update constant buffers
+    //device_context_11_x->UpdateSubresource(shaderConstantBuffer_dims, 0, 0, &VsConstData_dims, 0, 0);
+
+    {
+        D3D11_MAPPED_SUBRESOURCE mappedResource;
+
+        // Lock the constant buffer so it can be written to.
+        device_context_11_x->Map(shaderConstantBuffer_dims, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
+
+        
+        // Get a pointer to the data in the constant buffer.
+        //ConstBuffer* dataPtr = (ConstBuffer*)mappedResource.pData;
+        memcpy(mappedResource.pData, &VsConstData_dims, sizeof(VsConstData_dims));
+
+        // Unlock the constant buffer.
+        device_context_11_x->Unmap(shaderConstantBuffer_dims, 0);
+    }
+
+    device_context_11_x->VSSetConstantBuffers(0, 1, &shaderConstantBuffer_dims);
+
+    //device_context_11_x->Draw(15, 0);   // 5 tri's
+    device_context_11_x->Draw(21, 0);   // 5 tri's
+
 
 
     const UINT vsync = 1;
@@ -744,6 +1109,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    }
 
    InitD3D11();
+   InitShaders();
 
    ShowWindow(hWnd, nCmdShow);
    UpdateWindow(hWnd);
