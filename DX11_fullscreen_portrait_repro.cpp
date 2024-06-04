@@ -261,6 +261,39 @@ void InitD3D11(void)
     IDXGIDevice4* dxgiDevice4 = nullptr;
 
 
+
+    // Get adapter
+    UINT i = 0;
+    IDXGIAdapter1* pAdapter;
+    std::vector <IDXGIAdapter1*> vAdapters;
+    while (pFactory->EnumAdapters1(i, &pAdapter) != DXGI_ERROR_NOT_FOUND)
+    {
+        vAdapters.push_back(pAdapter);
+        ++i;
+    }
+
+    // Uncomment to force skipping over Radeon RX 580 Series GPU
+    // Purely a quick hack to prioritise secondary GPU
+#if 0
+    for (auto adapter : vAdapters)
+    {
+        DXGI_ADAPTER_DESC1 adapterDesc1;
+        adapter->GetDesc1(&adapterDesc1);
+
+        OutputDebugStringW(adapterDesc1.Description);
+
+        if (wcscmp(adapterDesc1.Description, L"Radeon RX 580 Series") == 0)
+            continue;
+
+        dxgiAdapter = (IDXGIAdapter4*)adapter;
+        d3d_driver_type = D3D_DRIVER_TYPE_UNKNOWN;
+        break;
+    }
+#endif
+
+
+
+
     result = D3D11CreateDevice(
         dxgiAdapter,
         d3d_driver_type,
