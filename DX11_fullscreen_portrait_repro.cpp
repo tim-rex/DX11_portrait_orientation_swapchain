@@ -28,9 +28,6 @@
     (sizeof(array) / (sizeof(array[0]) * (sizeof(array) != sizeof(void *) || sizeof(array[0]) <= sizeof(void *))))
 
 
-
-
-
 #define MAX_LOADSTRING 100
 
 // Global Variables:
@@ -254,7 +251,7 @@ void InitD3D11(void)
     IDXGIFactory7* pFactory;
     result = CreateDXGIFactory1(IID_IDXGIFactory7, (void**)(&pFactory));
 
-    if (!SUCCEEDED(result))
+    if (FAILED(result))
     {
         exit(EXIT_FAILURE);
     }
@@ -345,7 +342,7 @@ void InitD3D11(void)
             &device_context_11_0);
     }
 
-    if (!SUCCEEDED(result))
+    if (FAILED(result))
     {
         OutputDebugStringA("Failed D3D11CreateDevice\n");
         exit(EXIT_FAILURE);
@@ -354,21 +351,21 @@ void InitD3D11(void)
     dxgi_debug_init();
 
     result = device->QueryInterface(IID_IDXGIDevice4, (void**)&dxgiDevice4);
-    if (!SUCCEEDED(result))
+    if (FAILED(result))
     {
         OutputDebugStringA("Failed to query interface for dxgiDevice4\n");
         exit(EXIT_FAILURE);
     }
 
     result = dxgiDevice4->GetAdapter(&dxgiAdapter);
-    if (!SUCCEEDED(result))
+    if (FAILED(result))
     {
         OutputDebugStringA("Failed to get adapter from dxgiDevice4\n");
         exit(EXIT_FAILURE);
     }
 
     result = dxgiAdapter->GetParent(IID_IDXGIFactory7, (void**)&factory);
-    if (!SUCCEEDED(result))
+    if (FAILED(result))
     {
         OutputDebugStringA("Failed to retrieve factor from dxgiAdapter\n");
         exit(EXIT_FAILURE);
@@ -448,18 +445,19 @@ void InitD3D11(void)
         IDXGIOutput6* dxgiOutput6 = nullptr;
         DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAGS hardware_composition_support = {};
 
-
         result = dxgiOutput->QueryInterface(IID_IDXGIOutput6, (void**)&dxgiOutput6);
 
-        if (!SUCCEEDED(result))
+        if (FAILED(result))
         {
             OutputDebugStringA("Failed to query dxgiOutput6 from dxgiOutput\n");
             exit(EXIT_FAILURE);
         }
+        dxgiOutput->Release();
+        dxgiOutput = nullptr;
 
         result = dxgiOutput6->CheckHardwareCompositionSupport((UINT*)&hardware_composition_support);
 
-        if (!SUCCEEDED(result))
+        if (FAILED(result))
         {
             OutputDebugStringA("Failed to query hardware composition support from dxgiOutput6\n");
             exit(EXIT_FAILURE);
@@ -478,7 +476,7 @@ void InitD3D11(void)
         assert(dxgiOutput6);
 
         UINT flags = 0;
-        UINT numModes;
+        UINT numModes = 0;
 
         // Consider available display modes. Prefer that which matches our current (ideally native) desktop dimensions
 
@@ -546,7 +544,6 @@ void InitD3D11(void)
         UINT swapchain_flags = 0;
 
         //swapchain_flags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
-
         swapchain_flags |= allowTearing ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;
 
 
@@ -591,7 +588,7 @@ void InitD3D11(void)
 
         result = factory->CreateSwapChainForHwnd(device, hWnd, &swapchain_descriptor, &fullscreen_desc, nullptr, &swapchain);
 
-        if (!SUCCEEDED(result))
+        if (FAILED(result))
         {
             OutputDebugStringA("Failed to CreateSwapChainForHwnd from dxgiFactory\n");
             exit(EXIT_FAILURE);
@@ -648,32 +645,6 @@ ID3D11InputLayout* input_layout_ptr = NULL;
 
 void InitShaders(void)
 {
-
-#if 0
-    const char *shaderSource = R"(
-        /* vertex attributes go here to input to the vertex shader */
-        struct vs_in {
-            float3 position_local : POS;
-        };
-
-        /* outputs from vertex shader go here. can be interpolated to pixel shader */
-        struct vs_out {
-            float4 position_clip : SV_POSITION; // required output of VS
-        };
-
-        vs_out vs_main(vs_in input) {
-          vs_out output = (vs_out)0; // zero the memory first
-          output.position_clip = float4(input.position_local, 1.0);
-          return output;
-        }
-
-        float4 ps_main(vs_out input) : SV_TARGET {
-          return float4( 1.0, 0.0, 1.0, 1.0 ); // must return an RGBA colour
-        }
-)";
-
-#else
-
     const char* shaderSource = R"(
 
         cbuffer ConstantBuffer : register( b0 ) {
@@ -801,9 +772,7 @@ void InitShaders(void)
             //output.colour = float4(1.0, 1.0, 0.0, 1.0);
             return output;
         }
-
 )";
-#endif
 
 
     UINT flags = D3DCOMPILE_ENABLE_STRICTNESS;
@@ -877,32 +846,7 @@ void InitShaders(void)
     device_context_11_x->PSSetShader(pixel_shader_ptr, NULL, 0);
 
 
-    // Seems we still require an Input Assembler
-
-
-    /*
-    *       { "SV_VertexID", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
-
-                struct vs_in {
-            uint vertexId : SV_VertexID;
-        };
-    */
-
 #if 0
-    /*
-    //D3D11_INPUT_ELEMENT_DESC inputElementDesc[0] = {};
-
-    hr = device->CreateInputLayout(
-        nullptr,
-        0,
-        vs_blob_ptr->GetBufferPointer(),
-        vs_blob_ptr->GetBufferSize(),
-        &input_layout_ptr);
-    assert(SUCCEEDED(hr));
-    */
-    input_layout_ptr = nullptr;
-
-#else
     D3D11_INPUT_ELEMENT_DESC inputElementDesc[] = {
       { "POS", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
       /*
@@ -919,9 +863,9 @@ void InitShaders(void)
         vs_blob_ptr->GetBufferSize(),
         &input_layout_ptr);
     assert(SUCCEEDED(hr));
-
 #endif
 
+    
     // Create a constant buffer (for framebuffer dimensions
 
     {
@@ -1051,11 +995,12 @@ void render(void)
     device_context_11_x->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
     // Seems we still require an Input Assembler
-    //device_context_11_x->IASetInputLayout(input_layout_ptr);
 
-    device_context_11_x->IASetVertexBuffers(0, 0, nullptr, 0, 0);
-    device_context_11_x->IASetIndexBuffer(nullptr, DXGI_FORMAT_UNKNOWN, 0);
-    device_context_11_x->IASetInputLayout(nullptr);    
+    // Not necessary, we're using shader defined vertices
+
+    //device_context_11_x->IASetVertexBuffers(0, 0, nullptr, 0, 0);
+    //device_context_11_x->IASetIndexBuffer(nullptr, DXGI_FORMAT_UNKNOWN, 0);
+    //device_context_11_x->IASetInputLayout(nullptr);    
 
 
     VsConstData_dims.width = (float)window_width;
@@ -1070,7 +1015,6 @@ void render(void)
         // Lock the constant buffer so it can be written to.
         device_context_11_x->Map(shaderConstantBuffer_dims, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
 
-        
         // Get a pointer to the data in the constant buffer.
         //ConstBuffer* dataPtr = (ConstBuffer*)mappedResource.pData;
         memcpy(mappedResource.pData, &VsConstData_dims, sizeof(VsConstData_dims));
@@ -1082,8 +1026,7 @@ void render(void)
     device_context_11_x->VSSetConstantBuffers(0, 1, &shaderConstantBuffer_dims);
 
     //device_context_11_x->Draw(15, 0);   // 5 tri's
-    device_context_11_x->Draw(21, 0);   // 5 tri's
-
+    device_context_11_x->Draw(21, 0);   // 7 tri's
 
 
     const UINT vsync = 1;
@@ -1091,7 +1034,6 @@ void render(void)
     const DXGI_PRESENT_PARAMETERS presentParameters = {};
 
     swapchain->Present1(vsync, presentFlags, &presentParameters);
-
 }
 
 
@@ -1292,7 +1234,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             //hr = swapchain->ResizeBuffers(0, 0, 0, DXGI_FORMAT_UNKNOWN, swapchain_flags);
             hr = swapchain->ResizeBuffers(0, window_width, window_height, DXGI_FORMAT_UNKNOWN, swapchain_flags);
 
-            if (!SUCCEEDED(hr))
+            if (FAILED(hr))
             {
                 OutputDebugStringA("Failed to resize swapchain buffer\n");
                 exit(EXIT_FAILURE);
@@ -1302,7 +1244,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             ID3D11Texture2D* pBuffer;
             hr = swapchain->GetBuffer(0, IID_ID3D11Texture2D, (void**)&pBuffer);
 
-            if (!SUCCEEDED(hr))
+            if (FAILED(hr))
             {
                 OutputDebugStringA("Failed to retrieve swapchain buffer\n");
                 exit(EXIT_FAILURE);
@@ -1319,7 +1261,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             hr = device->CreateRenderTargetView(pBuffer, NULL, &render_target_view);
 
-            if (!SUCCEEDED(hr))
+            if (FAILED(hr))
             {
                 OutputDebugStringA("Failed to create render target view\n");
                 exit(EXIT_FAILURE);
