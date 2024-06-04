@@ -111,7 +111,6 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
 
 HWND hWnd;
 ID3D11Device* device = nullptr;
-ID3D11DeviceContext* device_context_11_0 = nullptr;
 ID3D11DeviceContext1* device_context_11_x = nullptr;
 IDXGISwapChain1* swapchain = nullptr;
 ID3D11RenderTargetView* render_target_view = nullptr;
@@ -291,8 +290,8 @@ void InitD3D11(void)
     }
 #endif
 
-
-
+    // Temporary context, we'll replace with 11_1
+    ID3D11DeviceContext* device_context_11_0 = nullptr;
 
     result = D3D11CreateDevice(
         dxgiAdapter,
@@ -592,6 +591,7 @@ void InitD3D11(void)
         assert(S_OK == result && swapchain && device && device_context_11_0);
 
         device_context_11_x = (ID3D11DeviceContext1*)device_context_11_0;
+        device_context_11_0 = nullptr;
 
         OutputDebugStringA("Direct3D 11 device context created\n");
 
@@ -630,7 +630,7 @@ void render(void)
     // Clear the backbuffer entirely
     {
         float clearColor1[4] = { 0.2f, 0.2f, 0.7f, 1.0f };
-        device_context_11_0->ClearRenderTargetView(render_target_view, &clearColor1[0]);
+        device_context_11_x->ClearRenderTargetView(render_target_view, &clearColor1[0]);
     }
 
 
@@ -646,13 +646,13 @@ void render(void)
         char msg[1024];
         snprintf(msg, 1024, "render time viewport dimensions %f x %f\n", viewport.Width, viewport.Height);
         OutputDebugStringA(msg);
-        device_context_11_0->RSSetViewports(1, &viewport);
+        device_context_11_x->RSSetViewports(1, &viewport);
     }
 #endif
 
 
     UINT num_views = 1;
-    device_context_11_0->OMSetRenderTargets(num_views, &render_target_view, nullptr);
+    device_context_11_x->OMSetRenderTargets(num_views, &render_target_view, nullptr);
     
     if (feature_level >= 1)
     {
@@ -907,7 +907,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             swapchain->ResizeTarget(&target_mode);
 
-            device_context_11_0->OMSetRenderTargets(0, 0, 0);
+            device_context_11_x->OMSetRenderTargets(0, 0, 0);
 
             // Release all outstanding references to the swap chain's buffers.
             render_target_view->Release();
@@ -962,7 +962,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             pBuffer->Release();
 
-            device_context_11_0->OMSetRenderTargets(1, &render_target_view, nullptr);
+            device_context_11_x->OMSetRenderTargets(1, &render_target_view, nullptr);
 
             // Set up the viewport.
             D3D11_VIEWPORT vp = {
@@ -975,7 +975,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             vp.MaxDepth = 1.0f;
             vp.TopLeftX = 0;
             vp.TopLeftY = 0;
-            device_context_11_0->RSSetViewports(1, &vp);
+            device_context_11_x->RSSetViewports(1, &vp);
         }
         return 0;
 
