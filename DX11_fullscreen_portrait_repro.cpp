@@ -120,6 +120,7 @@ UINT window_height = 0;
 BOOL DXGI_fullscreen = false;
 BOOL allowTearing = false;
 
+BOOL framechanged = false;
 
 
 ID3D11Buffer* shaderConstantBuffer_dims = NULL;
@@ -1009,7 +1010,10 @@ void render(void)
     // We must use MAP to update constant buffers
     //device_context_11_x->UpdateSubresource(shaderConstantBuffer_dims, 0, 0, &VsConstData_dims, 0, 0);
 
+    if (framechanged)
     {
+        framechanged = false;
+
         D3D11_MAPPED_SUBRESOURCE mappedResource;
 
         // Lock the constant buffer so it can be written to.
@@ -1159,6 +1163,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             snprintf(msg, 1024, "New WM_SIZE event: %d x %d\n", LOWORD(lParam), HIWORD(lParam));
 
             OutputDebugStringA(msg);
+
+            framechanged = true;
 
             UINT swapchain_flags = 0;
             //swapchain_flags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
