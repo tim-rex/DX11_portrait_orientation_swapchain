@@ -313,9 +313,6 @@ void InitD3D11(void)
     // Device selection
     D3D_DRIVER_TYPE d3d_driver_type = D3D_DRIVER_TYPE_HARDWARE;
 
-    // We must use IDXGI interfaces now to query and build a swapchain
-    IDXGIDevice4* dxgiDevice4 = nullptr;
-
 
 #if 0
 
@@ -436,12 +433,6 @@ void InitD3D11(void)
     dxgi_debug_report();
 
 
-    result = device->QueryInterface(IID_PPV_ARGS(&dxgiDevice4));
-    if (FAILED(result))
-    {
-        OutputDebugStringA("Failed to query interface for dxgiDevice4\n");
-        exit(EXIT_FAILURE);
-    }
 
     IDXGIOutput* dxgiOutput = nullptr;
 
@@ -630,6 +621,7 @@ void InitD3D11(void)
             .BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT,
             .BufferCount = 2,								// Needs to be >= 2 for FLIP swap effect
             .Scaling = DXGI_SCALING_NONE,
+            //.Scaling = DXGI_SCALING_STRETCH,
             .SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD,	// DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL
             .Flags = swapchain_flags,
         };
@@ -672,16 +664,11 @@ void InitD3D11(void)
         //pFactory->MakeWindowAssociation(hWnd, DXGI_MWA_NO_ALT_ENTER);
 
 
-        dxgiDevice4->Release();
-        dxgiDevice4 = nullptr;
-
         dxgiAdapter->Release();
         dxgiAdapter = nullptr;
 
         pFactory->Release();
         pFactory = nullptr;
-
-        // TODO: We still seem to have a dangling factory reference somewhere (??) Possibly GetParent() ?
 
 
         assert(S_OK == result && swapchain && device && device_context_11_x);
@@ -1272,7 +1259,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             DXGI_OUTPUT_DESC output_desc;
             output->GetDesc(&output_desc);
-
             output->Release();
             output = nullptr;
 
