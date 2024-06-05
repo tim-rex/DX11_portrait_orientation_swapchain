@@ -15,6 +15,8 @@
 
 #include <d3d11.h>       // D3D interface
 #include <d3d11_1.h>     // D3D 11.1 extensions    TODO: Should we use 1_4 ? 1_5? 1_6?
+#include <d3d11_4.h>     // ID3D11Device5
+
 #include <dxgi1_6.h>     // CheckHardwareCompositionSupport
 
 #include <dxgidebug.h>   // DXGI_INFO_QUEUE
@@ -108,7 +110,7 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
 
 
 HWND hWnd;
-ID3D11Device* device = nullptr;
+ID3D11Device5* device = nullptr;
 ID3D11DeviceContext1* device_context_11_x = nullptr;
 IDXGISwapChain1* swapchain = nullptr;
 ID3D11RenderTargetView* render_target_view = nullptr;
@@ -137,6 +139,21 @@ struct VS_CONSTANT_BUFFER
 struct VS_CONSTANT_BUFFER VsConstData_dims = {};
 
 
+void dxgi_debug_report()
+{
+    IDXGIDebug1* pDebug = nullptr;
+    if (SUCCEEDED(DXGIGetDebugInterface1(0, IID_PPV_ARGS(&pDebug))))
+    {
+        //pDebug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_SUMMARY);
+        //pDebug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_ALL);
+        pDebug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_IGNORE_INTERNAL);
+
+        //pDebug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_DETAIL);
+
+        pDebug->Release();
+        pDebug = nullptr;
+    }
+}
 
 void dxgi_debug_init()
 {
@@ -162,10 +179,10 @@ void dxgi_debug_init()
         // for debug builds enable VERY USEFUL debug break on API errors
         {
             ID3D11InfoQueue* info;
-            device->QueryInterface(__uuidof(ID3D11InfoQueue), (void**)&info);
+            device->QueryInterface(IID_PPV_ARGS(&info));
             info->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_CORRUPTION, TRUE);
             info->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_ERROR, TRUE);
-            info->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_WARNING, TRUE);
+            //info->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_WARNING, TRUE);
             info->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_INFO, TRUE);
             info->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_MESSAGE, TRUE);
 
@@ -174,7 +191,7 @@ void dxgi_debug_init()
             info->SetBreakOnCategory(D3D11_MESSAGE_CATEGORY_INITIALIZATION, TRUE);
             info->SetBreakOnCategory(D3D11_MESSAGE_CATEGORY_CLEANUP, TRUE);
             info->SetBreakOnCategory(D3D11_MESSAGE_CATEGORY_COMPILATION, TRUE);
-            info->SetBreakOnCategory(D3D11_MESSAGE_CATEGORY_STATE_CREATION, TRUE);
+            //info->SetBreakOnCategory(D3D11_MESSAGE_CATEGORY_STATE_CREATION, TRUE);
             info->SetBreakOnCategory(D3D11_MESSAGE_CATEGORY_STATE_SETTING, TRUE);
             info->SetBreakOnCategory(D3D11_MESSAGE_CATEGORY_STATE_GETTING, TRUE);
             info->SetBreakOnCategory(D3D11_MESSAGE_CATEGORY_RESOURCE_MANIPULATION, TRUE);
@@ -185,17 +202,19 @@ void dxgi_debug_init()
             //info->AddApplicationMessage(D3D11_MESSAGE_SEVERITY_ERROR, "TEST");
             //info->AddMessage(D3D11_MESSAGE_CATEGORY_MISCELLANEOUS, D3D11_MESSAGE_SEVERITY_ERROR, D3D11_MESSAGE_ID_UNKNOWN, "TEST");
 
+
             info->Release();
+            info = nullptr;
         }
 
         // enable debug break for DXGI too
         {
             IDXGIInfoQueue* info;
-            DXGIGetDebugInterface1(0, __uuidof(IDXGIInfoQueue), (void**)&info);
+            DXGIGetDebugInterface1(0, IID_PPV_ARGS(&info));
 
             info->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_CORRUPTION, TRUE);
             info->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_ERROR, TRUE);
-            info->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_WARNING, TRUE);
+            //info->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_WARNING, TRUE);
             info->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_INFO, TRUE);
             info->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_MESSAGE, TRUE);
 
@@ -204,7 +223,7 @@ void dxgi_debug_init()
             info->SetBreakOnCategory(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_CATEGORY_INITIALIZATION, TRUE);
             info->SetBreakOnCategory(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_CATEGORY_CLEANUP, TRUE);
             info->SetBreakOnCategory(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_CATEGORY_COMPILATION, TRUE);
-            info->SetBreakOnCategory(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_CATEGORY_STATE_CREATION, TRUE);
+            //info->SetBreakOnCategory(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_CATEGORY_STATE_CREATION, TRUE);
             info->SetBreakOnCategory(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_CATEGORY_STATE_SETTING, TRUE);
             info->SetBreakOnCategory(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_CATEGORY_STATE_GETTING, TRUE);
             info->SetBreakOnCategory(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_CATEGORY_RESOURCE_MANIPULATION, TRUE);
@@ -219,9 +238,19 @@ void dxgi_debug_init()
             // NOTE: Result message will let us break
             //info->AddMessage(DXGI_DEBUG_DXGI, DXGI_INFO_QUEUE_MESSAGE_CATEGORY_MISCELLANEOUS, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_ERROR, D3D11_MESSAGE_ID_UNKNOWN, "TEST");
 
-            //debug_info->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_ALL);
+            //info->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_ALL);
 
             info->Release();
+            info = nullptr;
+
+
+            IDXGIDebug1* pDebug = nullptr;
+            if (SUCCEEDED(DXGIGetDebugInterface1(0, IID_PPV_ARGS(&pDebug))))
+            {
+                pDebug->EnableLeakTrackingForThread();
+                pDebug->Release();
+                pDebug = nullptr;
+            }
         }
 
         // after this there's no need to check for any errors on device functions manually
@@ -248,15 +277,30 @@ void InitD3D11(void)
     device_flags |= D3D11_CREATE_DEVICE_DEBUG;
 #endif
 
+    UINT factory_flags = 0;
+#if defined( DEBUG ) || defined( _DEBUG )
+    factory_flags |= D3D11_CREATE_DEVICE_DEBUG;
+#endif
 
-    IDXGIFactory7* pFactory;
-    result = CreateDXGIFactory1(IID_IDXGIFactory7, (void**)(&pFactory));
+    IDXGIFactory2* pFactory2 = nullptr;
+    //result = CreateDXGIFactory1(IID_PPV_ARGS(&pFactory));
+    result = CreateDXGIFactory2(factory_flags, IID_PPV_ARGS(&pFactory2));
 
     if (FAILED(result))
     {
         exit(EXIT_FAILURE);
     }
 
+    IDXGIFactory7* pFactory = nullptr;
+    pFactory2->QueryInterface(IID_PPV_ARGS(&pFactory));
+
+    if (FAILED(result))
+    {
+        exit(EXIT_FAILURE);
+    }
+
+    pFactory2->Release();
+    pFactory2 = nullptr;
 
     // Feature support
 
@@ -269,12 +313,11 @@ void InitD3D11(void)
     // Device selection
     D3D_DRIVER_TYPE d3d_driver_type = D3D_DRIVER_TYPE_HARDWARE;
 
-    IDXGIFactory7* factory = nullptr;
-
     // We must use IDXGI interfaces now to query and build a swapchain
     IDXGIDevice4* dxgiDevice4 = nullptr;
 
 
+#if 0
 
     // Get adapter
     UINT i = 0;
@@ -288,7 +331,6 @@ void InitD3D11(void)
 
     // Uncomment to force skipping over Radeon RX 580 Series GPU
     // Purely a quick hack to prioritise secondary GPU
-#if 0
     for (auto adapter : vAdapters)
     {
         DXGI_ADAPTER_DESC1 adapterDesc1;
@@ -299,79 +341,107 @@ void InitD3D11(void)
         if (wcscmp(adapterDesc1.Description, L"Radeon RX 580 Series") == 0)
             continue;
 
+        // TODO: Use proper method to obtain adapter4
         dxgiAdapter = (IDXGIAdapter4*)adapter;
         d3d_driver_type = D3D_DRIVER_TYPE_UNKNOWN;
         break;
     }
+
+    for (auto adapter : vAdapters)
+    {
+        adapter->Release();
+        adapter = nullptr;
+    }
+    vAdapters.clear();
+#else
+    // Get the default device
+    pFactory->EnumAdapterByGpuPreference(0, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&dxgiAdapter));
+    d3d_driver_type = D3D_DRIVER_TYPE_UNKNOWN;
 #endif
 
+
     // Temporary context, we'll replace with 11_1
-    ID3D11DeviceContext* device_context_11_0 = nullptr;
-
-    result = D3D11CreateDevice(
-        dxgiAdapter,
-        d3d_driver_type,
-        nullptr,
-        device_flags,
-        &feature_level_req[0],
-        ARRAY_COUNT(feature_level_req),
-        D3D11_SDK_VERSION,
-        &device,
-        &feature_level,
-        &device_context_11_0
-    );
-
-    if (result == E_INVALIDARG)
     {
-        OutputDebugStringA("Direct3D 11_1 device not available, trying again for 11_0\n");
-
-        // https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-d3d11createdeviceandswapchain
-        //    If you provide a D3D_FEATURE_LEVEL array that contains D3D_FEATURE_LEVEL_11_1 on a computer 
-        //    that doesn't have the Direct3D 11.1 runtime installed, this function immediately fails with 
-        //    E_INVALIDARG.
+        ID3D11Device* device_11_0 = nullptr;
+        ID3D11DeviceContext* device_context_11_0 = nullptr;
 
         result = D3D11CreateDevice(
             dxgiAdapter,
             d3d_driver_type,
             nullptr,
             device_flags,
-            &feature_level_req[1],
-            ARRAY_COUNT(feature_level_req) - 1,
+            &feature_level_req[0],
+            ARRAY_COUNT(feature_level_req),
             D3D11_SDK_VERSION,
-            &device,
+            &device_11_0,
             &feature_level,
-            &device_context_11_0);
-    }
+            &device_context_11_0
+        );
 
-    if (FAILED(result))
-    {
-        OutputDebugStringA("Failed D3D11CreateDevice\n");
-        exit(EXIT_FAILURE);
+        if (result == E_INVALIDARG)
+        {
+            OutputDebugStringA("Direct3D 11_1 device not available, trying again for 11_0\n");
+
+            // https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-d3d11createdeviceandswapchain
+            //    If you provide a D3D_FEATURE_LEVEL array that contains D3D_FEATURE_LEVEL_11_1 on a computer 
+            //    that doesn't have the Direct3D 11.1 runtime installed, this function immediately fails with 
+            //    E_INVALIDARG.
+
+            result = D3D11CreateDevice(
+                dxgiAdapter,
+                d3d_driver_type,
+                nullptr,
+                device_flags,
+                &feature_level_req[1],
+                ARRAY_COUNT(feature_level_req) - 1,
+                D3D11_SDK_VERSION,
+                &device_11_0,
+                &feature_level,
+                &device_context_11_0);
+        }
+
+        if (FAILED(result))
+        {
+            OutputDebugStringA("Failed D3D11CreateDevice\n");
+            exit(EXIT_FAILURE);
+        }
+
+
+        result = device_11_0->QueryInterface(IID_PPV_ARGS(&device));
+        if (FAILED(result))
+        {
+            OutputDebugStringA("Failed to QueryInterface for ID3D11Device5 from ID3D11Device\n");
+            exit(EXIT_FAILURE);
+        }
+
+        result = device_context_11_0->QueryInterface(IID_PPV_ARGS(&device_context_11_x));
+
+        if (FAILED(result))
+        {
+            OutputDebugStringA("Failed to QueryInterface for ID3D11DeviceContext1 from ID3D11DeviceContext\n");
+            exit(EXIT_FAILURE);
+        }
+
+
+        device_context_11_0->Release();
+        device_11_0->Release();
+
+        device_context_11_0 = nullptr;
+        device_11_0 = nullptr;
     }
 
     dxgi_debug_init();
 
-    result = device->QueryInterface(IID_IDXGIDevice4, (void**)&dxgiDevice4);
+
+    dxgi_debug_report();
+
+
+    result = device->QueryInterface(IID_PPV_ARGS(&dxgiDevice4));
     if (FAILED(result))
     {
         OutputDebugStringA("Failed to query interface for dxgiDevice4\n");
         exit(EXIT_FAILURE);
     }
-
-    result = dxgiDevice4->GetAdapter(&dxgiAdapter);
-    if (FAILED(result))
-    {
-        OutputDebugStringA("Failed to get adapter from dxgiDevice4\n");
-        exit(EXIT_FAILURE);
-    }
-
-    result = dxgiAdapter->GetParent(IID_IDXGIFactory7, (void**)&factory);
-    if (FAILED(result))
-    {
-        OutputDebugStringA("Failed to retrieve factor from dxgiAdapter\n");
-        exit(EXIT_FAILURE);
-    }
-
 
     IDXGIOutput* dxgiOutput = nullptr;
 
@@ -380,7 +450,6 @@ void InitD3D11(void)
     {
         UINT i = 0;
         IDXGIOutput* pOutput;
-        std::vector<IDXGIOutput*> vOutputs;
 
         RECT display_rect = {};
         while (dxgiAdapter->EnumOutputs(i, &pOutput) != DXGI_ERROR_NOT_FOUND)
@@ -426,8 +495,9 @@ void InitD3D11(void)
 
             break;
             //++i;
+            pOutput->Release();
         }
-
+        pOutput = nullptr;
 
         // Ensure the window it located on the desktop identified by the above
 
@@ -446,7 +516,7 @@ void InitD3D11(void)
         IDXGIOutput6* dxgiOutput6 = nullptr;
         DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAGS hardware_composition_support = {};
 
-        result = dxgiOutput->QueryInterface(IID_IDXGIOutput6, (void**)&dxgiOutput6);
+        result = dxgiOutput->QueryInterface(IID_PPV_ARGS(&dxgiOutput6));
 
         if (FAILED(result))
         {
@@ -506,6 +576,8 @@ void InitD3D11(void)
         UINT display_height = (UINT)output_desc1.DesktopCoordinates.bottom - output_desc1.DesktopCoordinates.top;
         UINT display_width = (UINT)output_desc1.DesktopCoordinates.right - output_desc1.DesktopCoordinates.left;
 
+        dxgiOutput6->Release();
+        dxgiOutput6 = nullptr;
 
         for (unsigned int i = 0; i < numModes; i++)
         {
@@ -587,7 +659,7 @@ void InitD3D11(void)
         };
 
 
-        result = factory->CreateSwapChainForHwnd(device, hWnd, &swapchain_descriptor, &fullscreen_desc, nullptr, &swapchain);
+        result = pFactory->CreateSwapChainForHwnd(device, hWnd, &swapchain_descriptor, &fullscreen_desc, nullptr, &swapchain);
 
         if (FAILED(result))
         {
@@ -597,16 +669,22 @@ void InitD3D11(void)
 
 
         // Uncomment to prevent Alt+Enter from triggering a fullscreen switch
-        //factory->MakeWindowAssociation(hWnd, DXGI_MWA_NO_ALT_ENTER);
+        //pFactory->MakeWindowAssociation(hWnd, DXGI_MWA_NO_ALT_ENTER);
 
-        factory->Release();
-        dxgiAdapter->Release();
+
         dxgiDevice4->Release();
+        dxgiDevice4 = nullptr;
 
-        assert(S_OK == result && swapchain && device && device_context_11_0);
+        dxgiAdapter->Release();
+        dxgiAdapter = nullptr;
 
-        device_context_11_x = (ID3D11DeviceContext1*)device_context_11_0;
-        device_context_11_0 = nullptr;
+        pFactory->Release();
+        pFactory = nullptr;
+
+        // TODO: We still seem to have a dangling factory reference somewhere (??) Possibly GetParent() ?
+
+
+        assert(S_OK == result && swapchain && device && device_context_11_x);
 
         OutputDebugStringA("Direct3D 11 device context created\n");
 
@@ -619,7 +697,7 @@ void InitD3D11(void)
         // First obtain the framebuffer from the swapchain
 
         ID3D11Texture2D* framebuffer;
-        result = swapchain->GetBuffer(0, IID_ID3D11Texture2D, (void**)&framebuffer);
+        result = swapchain->GetBuffer(0, IID_PPV_ARGS(&framebuffer));
         assert(SUCCEEDED(result));
 
         // Now we can create the render target image view (pointing at the framebufer images already)
@@ -634,14 +712,14 @@ void InitD3D11(void)
 
         D3D11_TEXTURE2D_DESC framebufferSurfaceDesc;
         framebuffer->GetDesc(&framebufferSurfaceDesc);
-
+        
         framebuffer->Release();
+        framebuffer = nullptr;
     }
 }
 
 
-ID3D11InputLayout* input_layout_ptr = NULL;
-
+//ID3D11InputLayout* input_layout_ptr = NULL;
 
 
 void InitShaders(void)
@@ -760,7 +838,6 @@ void InitShaders(void)
         }
 
 
-
         struct ps_in {
             float4 pos :  SV_POSITION;
             linear float4 colour : COLOR0;
@@ -784,7 +861,9 @@ void InitShaders(void)
     flags |= D3DCOMPILE_DEBUG; // add more debug output
 #endif
 
-    ID3DBlob* vs_blob_ptr = NULL, * ps_blob_ptr = NULL, * error_blob = NULL;
+    ID3DBlob *vs_blob_ptr = nullptr;
+    ID3DBlob *ps_blob_ptr = nullptr;
+    ID3DBlob *error_blob = nullptr;
 
     HRESULT hr = 0;
     hr = D3DCompile(shaderSource, strlen(shaderSource), "basic vertex shader", nullptr, nullptr,
@@ -802,6 +881,9 @@ void InitShaders(void)
             OutputDebugStringA((char*)error_blob->GetBufferPointer());
         exit(EXIT_FAILURE);
     }
+
+    if (error_blob) error_blob->Release();
+    error_blob = nullptr;
 
 
     hr = D3DCompile(shaderSource, strlen(shaderSource), "basic pixel shader", nullptr, nullptr,
@@ -821,7 +903,7 @@ void InitShaders(void)
     }
 
     if (error_blob) error_blob->Release();
-
+    error_blob = nullptr;
 
     ID3D11VertexShader* vertex_shader_ptr = NULL;
     ID3D11PixelShader* pixel_shader_ptr = NULL;
@@ -840,14 +922,14 @@ void InitShaders(void)
         &pixel_shader_ptr);
     assert(SUCCEEDED(hr));
 
-    if (error_blob) error_blob->Release();
-
-
+    vs_blob_ptr->Release();
+    ps_blob_ptr->Release();
+ 
     // Skipping input layout, we're not going to use vertex buffers but let the shader do all the work
 
     // Bind the shaders to the context
-    device_context_11_x->VSSetShader(vertex_shader_ptr, NULL, 0);
-    device_context_11_x->PSSetShader(pixel_shader_ptr, NULL, 0);
+    device_context_11_x->VSSetShader(vertex_shader_ptr, nullptr, 0);
+    device_context_11_x->PSSetShader(pixel_shader_ptr, nullptr, 0);
 
 
 #if 0
@@ -897,7 +979,7 @@ void InitShaders(void)
             exit(EXIT_FAILURE);
         }
     }
-
+    
 }
 
 void render(void)
@@ -1145,7 +1227,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
                 {
                     ID3D11Texture2D* framebuffer;
-                    HRESULT result = swapchain->GetBuffer(0, IID_ID3D11Texture2D, (void**)&framebuffer);
+                    HRESULT result = swapchain->GetBuffer(0, IID_PPV_ARGS(&framebuffer));
                     assert(SUCCEEDED(result));
                     D3D11_TEXTURE2D_DESC framebufferSurfaceDesc;
                     framebuffer->GetDesc(&framebufferSurfaceDesc);
@@ -1153,6 +1235,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     snprintf(msg, 1024, "Framebuffer surface dimensions : %d x %d\n", framebufferSurfaceDesc.Width, framebufferSurfaceDesc.Height);
                     OutputDebugStringA(msg);
                     framebuffer->Release();
+                    framebuffer = nullptr;
                 }
 
             }
@@ -1190,9 +1273,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             DXGI_OUTPUT_DESC output_desc;
             output->GetDesc(&output_desc);
 
+            output->Release();
+            output = nullptr;
 
-
-            //this->device_context_11_x->ClearState();
             bool apply_rotation = DXGI_fullscreen && ((swapchain_flags & DXGI_SWAP_CHAIN_FLAG_NONPREROTATED)) && (output_desc.Rotation == DXGI_MODE_ROTATION_ROTATE90 || output_desc.Rotation == DXGI_MODE_ROTATION_ROTATE270);
 
             if (DXGI_fullscreen)
@@ -1228,6 +1311,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             // Release all outstanding references to the swap chain's buffers.
             render_target_view->Release();
+            render_target_view = nullptr;
+
+
+            //device_context_11_x->ClearState();
+            //device_context_11_x->Flush();
+
 
 
             //DXGI_OUTPUT_DESC output_desc;
@@ -1251,7 +1340,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             // Get buffer and create a render-target-view.
             ID3D11Texture2D* pBuffer;
-            hr = swapchain->GetBuffer(0, IID_ID3D11Texture2D, (void**)&pBuffer);
+            hr = swapchain->GetBuffer(0, IID_PPV_ARGS(&pBuffer));
 
             if (FAILED(hr))
             {
@@ -1278,6 +1367,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 
             pBuffer->Release();
+            pBuffer = nullptr;
 
             device_context_11_x->OMSetRenderTargets(1, &render_target_view, nullptr);
 
@@ -1307,7 +1397,58 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         }
         break;
 
+
     case WM_DESTROY:
+    {
+        // Cleanup
+        device_context_11_x->DiscardView(render_target_view);
+        device_context_11_x->DiscardResource(shaderConstantBuffer_dims);
+
+        device_context_11_x->VSSetConstantBuffers(0, 0, nullptr);
+        device_context_11_x->VSSetShader(nullptr, 0, 0);
+        device_context_11_x->PSSetShader(nullptr, 0, 0);
+        device_context_11_x->OMSetRenderTargets(0, nullptr, nullptr);
+
+
+        shaderConstantBuffer_dims->Release();
+        shaderConstantBuffer_dims = nullptr;
+
+        //input_layout_ptr->Release();
+        render_target_view->Release();
+        render_target_view = nullptr;
+
+        swapchain->Release();
+        swapchain = nullptr;
+
+        device_context_11_x->ClearState();
+        device_context_11_x->Flush();
+
+        device_context_11_x->Release();
+        device_context_11_x = nullptr;
+
+
+        ID3D11InfoQueue* info;
+        device->QueryInterface(IID_PPV_ARGS(&info));
+        info->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_WARNING, FALSE);
+        info->SetBreakOnCategory(D3D11_MESSAGE_CATEGORY_STATE_CREATION, FALSE);
+        info->Release();
+        info = nullptr;
+
+        IDXGIInfoQueue* infoqueue;
+        DXGIGetDebugInterface1(0, IID_PPV_ARGS(& infoqueue));
+        
+        infoqueue->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_WARNING, FALSE);
+        infoqueue->SetBreakOnCategory(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_CATEGORY_STATE_CREATION, FALSE);
+        infoqueue->Release();
+        infoqueue = nullptr;
+
+        device->Release();
+        device = nullptr;
+
+        
+
+        dxgi_debug_report();
+    }
         PostQuitMessage(0);
         break;
 
