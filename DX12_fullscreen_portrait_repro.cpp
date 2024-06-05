@@ -137,13 +137,28 @@ ID3D12Device4* device = nullptr;       // CreateCommandList1
 //IDXGISwapChain1* swapchain = nullptr;
 IDXGISwapChain4* swapchain4 = nullptr;
 
-ID3D12Resource2* render_target_view = nullptr;
-
 
 UINT window_width = 0;
 UINT window_height = 0;
 BOOL DXGI_fullscreen = false;
 BOOL allowTearing = false;
+
+
+void dxgi_debug_report()
+{
+    IDXGIDebug1* pDebug = nullptr;
+    if (SUCCEEDED(DXGIGetDebugInterface1(0, IID_PPV_ARGS(&pDebug))))
+    {
+        //pDebug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_SUMMARY);
+        //pDebug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_ALL);
+
+        pDebug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_IGNORE_INTERNAL);
+        //pDebug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_DETAIL);
+
+        pDebug->Release();
+        pDebug = nullptr;
+    }
+}
 
 
 void dxgi_debug_pre_device_init()
@@ -239,6 +254,7 @@ void dxgi_debug_post_device_init()
             //info->AddMessage(D3D12_MESSAGE_CATEGORY_MISCELLANEOUS, D3D12_MESSAGE_SEVERITY_ERROR, D3D12_MESSAGE_ID_UNKNOWN, "TEST");
 
             info->Release();
+            info = nullptr;
         }
 
         // enable debug break for DXGI too
@@ -275,11 +291,24 @@ void dxgi_debug_post_device_init()
             //debug_info->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_ALL);
 
             info->Release();
+            info = nullptr;
+        }
+
+        {
+            IDXGIDebug1* pDebug = nullptr;
+            if (SUCCEEDED(DXGIGetDebugInterface1(0, IID_PPV_ARGS(&pDebug))))
+            {
+                pDebug->EnableLeakTrackingForThread();
+                pDebug->Release();
+                pDebug = nullptr;
+            }
         }
 
         // after this there's no need to check for any errors on device functions manually
         // so all HRESULT return values in this code will be ignored
         // debugger will break on errors anyway
+
+
     }
 #endif
 
@@ -326,11 +355,6 @@ void InitD3D12(void)
     IDXGIAdapter4* dxgiAdapter = nullptr;
 
 
-    D3D_FEATURE_LEVEL feature_level_req[] = {
-        D3D_FEATURE_LEVEL_11_1,
-        D3D_FEATURE_LEVEL_11_0,
-    };
-
 #ifdef NDEBUG
     UINT flags = 0; 
 #else
@@ -357,10 +381,8 @@ void InitD3D12(void)
     dxgi_debug_pre_device_init();
 
     // Device selection
-    D3D_DRIVER_TYPE d3d_driver_type = D3D_DRIVER_TYPE_HARDWARE;
 
-
-
+#if 0
     // Get adapter
     UINT i = 0;
     IDXGIAdapter1* pAdapter;
@@ -373,7 +395,7 @@ void InitD3D12(void)
 
     // Uncomment to force skipping over Radeon RX 580 Series GPU
     // Purely a quick hack to prioritise secondary GPU
-#if 0
+
     for (auto adapter : vAdapters)
     {
         DXGI_ADAPTER_DESC1 adapterDesc1;
@@ -387,9 +409,11 @@ void InitD3D12(void)
         dxgiAdapter = (IDXGIAdapter4 *) adapter;
         break;
     }
+#else
+    pFactory->EnumAdapterByGpuPreference(0, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&dxgiAdapter));
 #endif
 
-    result = D3D12CreateDevice(dxgiAdapter, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&device) );
+    result = D3D12CreateDevice(dxgiAdapter, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&device) );
     
     if (FAILED(result))
     {
@@ -398,8 +422,11 @@ void InitD3D12(void)
     }
     device->SetName(L"device");
 
-    LUID luid = device->GetAdapterLuid();
-    result = pFactory->EnumAdapterByLuid(luid, IID_PPV_ARGS(&dxgiAdapter));
+    if (!dxgiAdapter)
+    {
+        LUID luid = device->GetAdapterLuid();
+        result = pFactory->EnumAdapterByLuid(luid, IID_PPV_ARGS(&dxgiAdapter));
+    }
 
     if (FAILED(result))
     {
@@ -462,8 +489,9 @@ void InitD3D12(void)
 
             break;
             //++i;
+            pOutput->Release();
         }
-
+        pOutput = nullptr;
 
         // Ensure the window it located on the desktop identified by the above
 
@@ -489,6 +517,8 @@ void InitD3D12(void)
             OutputDebugStringA("Failed to query dxgiOutput6 from dxgiOutput\n");
             exit(EXIT_FAILURE);
         }
+        dxgiOutput->Release();
+        dxgiOutput = nullptr;
 
         result = dxgiOutput6->CheckHardwareCompositionSupport((UINT*)&hardware_composition_support);
 
@@ -540,6 +570,8 @@ void InitD3D12(void)
         UINT display_height = (UINT)output_desc1.DesktopCoordinates.bottom - output_desc1.DesktopCoordinates.top;
         UINT display_width = (UINT)output_desc1.DesktopCoordinates.right - output_desc1.DesktopCoordinates.left;
 
+        dxgiOutput6->Release();
+        dxgiOutput6 = nullptr;
 
         for (unsigned int i = 0; i < numModes; i++)
         {
@@ -587,7 +619,7 @@ void InitD3D12(void)
         device->CreateCommandQueue(&commandQueueDesc, IID_PPV_ARGS(&commandQueue));
         commandQueue->SetName(L"commandQueue");
     }
-    
+        
 
     // Swapchain creation
     {
@@ -641,6 +673,11 @@ void InitD3D12(void)
         // device:  For Direct3D 12 this is a pointer to a direct command queue (refer to ID3D12CommandQueue).
         result = pFactory->CreateSwapChainForHwnd(commandQueue, hWnd, &swapchain_descriptor, &fullscreen_desc, nullptr, &swapchain1);
 
+        if (FAILED(result))
+        {
+            OutputDebugStringA("Failed to CreateSwapChainForHwnd from dxgiFactory\n");
+            exit(EXIT_FAILURE);
+        }
 
         result = swapchain1->QueryInterface(IID_PPV_ARGS(&swapchain4));
         if (FAILED(result))
@@ -662,9 +699,12 @@ void InitD3D12(void)
         // Uncomment to prevent Alt+Enter from triggering a fullscreen switch
         //pFactory->MakeWindowAssociation(hWnd, DXGI_MWA_NO_ALT_ENTER);
 
-        pFactory->Release();
         dxgiAdapter->Release();
-        //dxgiDevice->Release();
+        dxgiAdapter = nullptr;
+
+        pFactory->Release();
+        pFactory = nullptr;
+
 
         assert(SUCCEEDED(result) && swapchain4 && device);
     
@@ -754,19 +794,22 @@ void InitD3D12(void)
             // Create a renderTargetView for each swapchain frame
             for (uint8_t i = 0; i < numFrames; i++)
             {
-                swapchain4->GetBuffer(i, IID_PPV_ARGS(&framebuffer[i]));
+                result = swapchain4->GetBuffer(i, IID_PPV_ARGS(&framebuffer[i]));
+                assert(SUCCEEDED(result));
+
                 device->CreateRenderTargetView(framebuffer[i], &rtvDesc, rtvHandle);
 
                 wchar_t name[32];
                 wsprintf(name, L"Framebuffer %d of %d", i, numFrames);
                 framebuffer[i]->SetName(name);
                 rtvHandles[i] = rtvHandle;
-                rtvHandle.ptr += incrementSize;                
+                rtvHandle.ptr += incrementSize;       
             }
 
             D3D12_RESOURCE_DESC desc = framebuffer[frameIndex]->GetDesc();
             D3D12_RESOURCE_DESC1 desc1 = framebuffer[frameIndex]->GetDesc1();
 
+            // We don't release here, we'll release when (and if) we need to resize the framebuffer
             //framebuffer->Release();
         }
 
@@ -786,7 +829,7 @@ void InitD3D12(void)
             {
                 OutputDebugStringA("Failed to create fence event");
                 exit(EXIT_FAILURE);
-            }
+            }            
         }
 
     }
@@ -833,7 +876,7 @@ void InitD3D12(void)
             exit(EXIT_FAILURE);
         }
         commandList->SetName(L"commandList");
-        commandList->Close();
+        commandList->Close();        
     }
 
 }
@@ -852,24 +895,6 @@ void WaitForGPU(void)
     // Increment the fence value for the current fram
     fenceValues[frameIndex]++;
 }
-
-/*
-void flushGpu()
-{
-    //for (int i = 0; i < numFrames; i++)
-    {
-        uint64_t fenceValueForSignal = ++fenceValue;
-        commandQueue->Signal(fence, fenceValueForSignal);
-        if (fence->GetCompletedValue() < fenceValue)
-        {
-            fence->SetEventOnCompletion(fenceValueForSignal, fenceEvent);
-            WaitForSingleObject(fenceEvent, INFINITE);
-        }
-    }
-    //frameIndex = 0;
-}
-*/
-
 
 #else
 void WaitForPreviousFrame(void)
@@ -1203,6 +1228,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             DXGI_OUTPUT_DESC output_desc;
             output->GetDesc(&output_desc);
             output->Release();
+            output = nullptr;
 
 
             //this->device_context_11_x->ClearState();
@@ -1363,8 +1389,73 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         break;
 
     case WM_DESTROY:
-        PostQuitMessage(0);
-        break;
+        {
+            // Cleanup
+
+            WaitForGPU();
+
+            for (UINT i = 0; i < numFrames; i++)
+            {
+                framebuffer[i]->Release();
+                framebuffer[i] = nullptr;
+            }
+
+            commandList->Release();
+            commandAllocator->Release();
+            fence->Release();
+            commandQueue->Release();
+
+
+            //device_context_11_x->DiscardView(render_target_view);
+            //device_context_11_x->DiscardResource(shaderConstantBuffer_dims);
+
+            //device_context_11_x->VSSetConstantBuffers(0, 0, nullptr);
+            //device_context_11_x->VSSetShader(nullptr, 0, 0);
+            //device_context_11_x->PSSetShader(nullptr, 0, 0);
+            //device_context_11_x->OMSetRenderTargets(0, nullptr, nullptr);
+
+
+            //shaderConstantBuffer_dims->Release();
+            //shaderConstantBuffer_dims = nullptr;
+
+            //input_layout_ptr->Release();
+            //render_target_view->Release();
+            //render_target_view = nullptr;
+
+            swapchain4->Release();
+            swapchain4 = nullptr;
+
+            //device_context_11_x->ClearState();
+            //device_context_11_x->Flush();
+
+            //device_context_11_x->Release();
+            //device_context_11_x = nullptr;
+
+
+            ID3D12InfoQueue* info;
+            device->QueryInterface(IID_PPV_ARGS(&info));
+            info->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, FALSE);
+            info->SetBreakOnCategory(D3D12_MESSAGE_CATEGORY_STATE_CREATION, FALSE);
+            info->Release();
+            info = nullptr;
+
+            IDXGIInfoQueue* infoqueue;
+            DXGIGetDebugInterface1(0, IID_PPV_ARGS(&infoqueue));
+
+            infoqueue->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_WARNING, FALSE);
+            infoqueue->SetBreakOnCategory(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_CATEGORY_STATE_CREATION, FALSE);
+            infoqueue->Release();
+            infoqueue = nullptr;
+
+            device->Release();
+            device = nullptr;
+
+
+
+            dxgi_debug_report();
+            PostQuitMessage(0);
+            break;
+        }
 
     default:
         return DefWindowProc(hWnd, message, wParam, lParam);
