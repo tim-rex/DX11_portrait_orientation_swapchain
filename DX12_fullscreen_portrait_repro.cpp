@@ -882,6 +882,27 @@ void InitD3D12(void)
         }
     }
 
+    // TODO: Consider AgilitySDK
+    // TODO: Consider enabling HLSL 202x
+    // TODO: Enable all warning flags for shaders
+    //       At a minimum:  -HV 202x -Wconversion -Wdouble-promotion -Whlsl-legacy-literal
+    // 
+    // TODO: Consider using Visual Studio compile time for shaders
+
+
+    // TODO: Validate available feature level / shader model
+    // While Direct3D 12 can support older compiled shader blobs, shaders should be built using either Shader 
+    // Model 5.1 with the FXC/D3DCompile APIs, or using Shader Model 6 using the DXIL DXC compiler. 
+    // You should validate Shader Model 6 support with CheckFeatureSupport and D3D12_FEATURE_SHADER_MODEL.
+
+
+
+    // TODO: Ref: https://learn.microsoft.com/en-us/windows/win32/direct3d12/porting-from-direct3d-11-to-direct3d-12
+    // While there are numerous ways to set up your application, generally applications have one ID3D12CommandAllocator 
+    // per swap-chain buffer. This allows the application to proceed to building up a set of commands for the next 
+    // frame while the GPU renders the previous.
+
+
     // Create a command allocator
     {
         HRESULT result = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&commandAllocator));
