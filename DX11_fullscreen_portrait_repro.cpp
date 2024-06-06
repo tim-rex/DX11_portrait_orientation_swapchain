@@ -1076,14 +1076,14 @@ void render(void)
     //device_context_11_x->IASetInputLayout(nullptr);    
 
 
-    VsConstData_dims.width = (float)window_width;
-    VsConstData_dims.height = (float)window_height;
 
     // We must use MAP to update constant buffers
     //device_context_11_x->UpdateSubresource(shaderConstantBuffer_dims, 0, 0, &VsConstData_dims, 0, 0);
 
     if (framechanged)
     {
+        VsConstData_dims.width = (float)window_width;
+        VsConstData_dims.height = (float)window_height;
         framechanged = false;
 
         D3D11_MAPPED_SUBRESOURCE mappedResource;
