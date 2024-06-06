@@ -125,11 +125,11 @@ const UINT numFrames = 2;
 
 //ID3D12Device10* device10 = nullptr;
 //ID3D12Device9* device = nullptr;
-//ID3D12Device8* device = nullptr;    // Works on Windows 10, despite documentation note above
+ID3D12Device8* device = nullptr;    // Works on Windows 10, despite documentation note above
 //ID3D12Device7* device = nullptr;
 //ID3D12Device6* device = nullptr;
 //ID3D12Device5* device = nullptr;
-ID3D12Device4* device = nullptr;       // CreateCommandList1
+//ID3D12Device4* device = nullptr;       // CreateCommandList1
 //ID3D12Device3* device = nullptr;
 //ID3D12Device2* device = nullptr;
 //ID3D12Device1* device = nullptr;
@@ -641,9 +641,9 @@ void InitD3D12(void)
         //assert(best_fullscreen_mode);
     }
 
-    commandQueue = nullptr;
     // Command queue creation
     {
+        commandQueue = nullptr;
 
         const D3D12_COMMAND_QUEUE_DESC commandQueueDesc = {
             .Type = D3D12_COMMAND_LIST_TYPE_DIRECT,
@@ -706,7 +706,7 @@ void InitD3D12(void)
 
 
         IDXGISwapChain1 *swapchain1;
-        // device:  For Direct3D 12 this is a pointer to a direct command queue (refer to ID3D12CommandQueue).
+        // For Direct3D 12 this is a pointer to a direct command queue (refer to ID3D12CommandQueue).
         result = pFactory->CreateSwapChainForHwnd(commandQueue, hWnd, &swapchain_descriptor, &fullscreen_desc, nullptr, &swapchain1);
 
         if (FAILED(result))
@@ -784,12 +784,13 @@ void InitD3D12(void)
             .Color = { 0.2f, 0.2f, 0.7f, 1.0f }
         };
 
-        device->CreateCommittedResource(
+        device->CreateCommittedResource1(
             &heapProperties,
             heapFlags,
             &resourceDesc,
             state,
             &clearValue,
+            nullptr,
             IID_PPV_ARGS(&framebuffer));
 
         framebuffer->SetName(L"framebuffer");
@@ -798,11 +799,8 @@ void InitD3D12(void)
         assert(SUCCEEDED(result));
 #endif
 
-        
-
 
         // Now we can create the render target image view (pointing at the framebufer images already)
-
 
         // We need a descriptor heap for the render target view
         {
@@ -822,7 +820,6 @@ void InitD3D12(void)
             rtvHeap->SetName(L"rtvHeap");
         }
 
-        
         // Create render target views for each swapchain image
         {
             D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = rtvHeap->GetCPUDescriptorHandleForHeapStart();
@@ -850,7 +847,6 @@ void InitD3D12(void)
             //framebuffer->Release();
         }
 
-
         // We need a fence to signal when the frame has rendered
         {
             device->CreateFence(fenceValues[frameIndex], D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
@@ -869,9 +865,7 @@ void InitD3D12(void)
             }            
         }
 
-
         // We also need a heap for our constant uniform buffer
-                // We need a descriptor heap for the render target view
         {
             cbvHeap = nullptr;
 
@@ -886,9 +880,7 @@ void InitD3D12(void)
 
             cbvHeap->SetName(L"cbvHeap");
         }
-
     }
-
 
     // Create a command allocator
     {
@@ -916,12 +908,26 @@ void InitD3D12(void)
             OutputDebugStringA("Failed to CreatePipelineState\n");
             exit(EXIT_FAILURE);
         }
-
     }
     */
 
 
     // Create a command list
+
+#if 1
+    {
+        HRESULT result = device->CreateCommandList1(0, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_LIST_FLAG_NONE, IID_PPV_ARGS(&commandList));
+
+        if (FAILED(result))
+        {
+            OutputDebugStringA("Failed to CreateCommandList1\n");
+            exit(EXIT_FAILURE);
+        }
+        commandList->SetName(L"commandList");
+
+        // This command list is created in a closed state by default
+    }
+#else
     {
         HRESULT result = device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, commandAllocator, pipelineState, IID_PPV_ARGS(&commandList));
 
@@ -931,8 +937,12 @@ void InitD3D12(void)
             exit(EXIT_FAILURE);
         }
         commandList->SetName(L"commandList");
+
+        // This command list is created in an open state
         commandList->Close();        
     }
+#endif
+
 
 }
 
@@ -1338,7 +1348,7 @@ void InitShaders(void)
     }
 
 
-    
+
     device->CreateRootSignature(0, rootSigBlob->GetBufferPointer(), rootSigBlob->GetBufferSize(), IID_PPV_ARGS(&rootSig));
     
     D3D12_RENDER_TARGET_BLEND_DESC renderTargetBlendStates = {
@@ -1395,9 +1405,6 @@ void InitShaders(void)
 #endif
 */
 
-
-
-
     hr = device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pso));
 
     if (FAILED(hr))
@@ -1405,9 +1412,6 @@ void InitShaders(void)
         OutputDebugStringA("Failed to create pipeline state object\n");
         exit(EXIT_FAILURE);
     }
-
-
-
 
     // Create a constant buffer (for framebuffer dimensions
 
@@ -1436,11 +1440,12 @@ void InitShaders(void)
         };
 
 
-        hr = device->CreateCommittedResource(
+        hr = device->CreateCommittedResource1(
             &heapProperties,
             heapFlags,
             &resourceDesc,
             D3D12_RESOURCE_STATE_GENERIC_READ,
+            nullptr,
             nullptr,
             IID_PPV_ARGS(&constantBuffer));
 
@@ -1449,19 +1454,12 @@ void InitShaders(void)
         constantBuffer->SetName(L"constant buffer");
 
 
-
         constantBufferView = {
             .BufferLocation = constantBuffer->GetGPUVirtualAddress(),
             .SizeInBytes = (UINT) resourceDesc.Width
         };
 
-        D3D12_CPU_DESCRIPTOR_HANDLE cpuDestDesc = {
-            
-        };
-
         device->CreateConstantBufferView(&constantBufferView, cbvHeap->GetCPUDescriptorHandleForHeapStart());
-
-
 
         // Map and initialize the constant buffer.
         // We don't unmap this until the app closes.
@@ -1471,6 +1469,9 @@ void InitShaders(void)
         D3D12_RANGE readRange = { 0, 0 };
         
 #if 1
+        // Just keep it permanently mapped
+        // TODO: Why is this ok?
+
         hr = constantBuffer->Map(0, &readRange, (void **)&persistentlyMappedConstantBuffer);
         memcpy(persistentlyMappedConstantBuffer, &VsConstData_dims, sizeof(VsConstData_dims));
 #else
@@ -1481,9 +1482,6 @@ void InitShaders(void)
 #endif
 
     }
-
-
-
 }
 
 void render(void)
@@ -1512,14 +1510,12 @@ void render(void)
         commandList->ResourceBarrier(1, &resourceBarrierTransitionPresentTarget);
     }
     
-
     // Set the root signature before doing anything
 
     commandList->SetGraphicsRootSignature(rootSig);
 
     // Set descriptor heaps
     {
-
         ID3D12DescriptorHeap* ppHeaps[] = { cbvHeap };
         commandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
 
@@ -1533,18 +1529,15 @@ void render(void)
     {
         // Ref: https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nn-d3d12-id3d12pipelinestate
         
-        
         commandList->SetPipelineState(pso);
         commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     }
-
 
     // Clear the backbuffer entirely
     {
         const float clearColor1[4] = { 0.2f, 0.2f, 0.7f, 1.0f };
         commandList->ClearRenderTargetView(rtvHandles[frameIndex], clearColor1, 0, nullptr);
     }
-
 
     // Set the viewport
     {
@@ -1563,12 +1556,10 @@ void render(void)
         commandList->RSSetScissorRects(1, &scissorRect);
     }
 
-
     // Set render targets
     {
         commandList->OMSetRenderTargets(1, &rtvHandles[frameIndex], FALSE, nullptr);
     }
-
 
     // Draw something
     {
@@ -1588,7 +1579,6 @@ void render(void)
             commandList->ClearRenderTargetView(rtvHandles[frameIndex], clearColor, 1, &rect);
         }
 
-
         {
             const FLOAT clearColor[4] = { 1.0f, 0.2f, 0.7f, 1.0f };
             D3D12_RECT rect;
@@ -1600,7 +1590,6 @@ void render(void)
             // Pink from top
             commandList->ClearRenderTargetView(rtvHandles[frameIndex], clearColor, 1, &rect);
         }
-
 
         {
             const FLOAT clearColor2[4] = { 0.2f, 1.0f, 0.7f, 1.0f };
@@ -1628,16 +1617,11 @@ void render(void)
             // Black from bottom right
             commandList->ClearRenderTargetView(rtvHandles[frameIndex], clearColor3, 1, &rect);
         }
-
     }
-
-
-
 
     // Draw something, we don't use vertex buffers - all the magic happens in the vertex shader
     {
         // Update constant data (frame dimensions
-
 
         if (framechanged)
         {
@@ -1649,15 +1633,11 @@ void render(void)
             memcpy(persistentlyMappedConstantBuffer, &VsConstData_dims, sizeof(VsConstData_dims));
         }
 
-
         commandList->DrawInstanced(21, 1, 0, 0);
     }
 
-
-
     // Drawing complete
     // Indicate that the back buffer will be used to present
-
     {
         // Create a resource barrier
         D3D12_RESOURCE_BARRIER resourceBarrierTransitionTargetPresent = {
@@ -1691,7 +1671,6 @@ void render(void)
 }
 
 
-
 BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 {
    hInst = hInstance; // Store instance handle in our global variable
@@ -1712,7 +1691,6 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
    return TRUE;
 }
-
 
 
 // Enable to handle portrait orientation displays ourselves (opt out of automatic pre-rotation)
@@ -1847,7 +1825,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             output->Release();
             output = nullptr;
 
-
             //this->device_context_11_x->ClearState();
             bool apply_rotation = DXGI_fullscreen && ((swapchain_flags & DXGI_SWAP_CHAIN_FLAG_NONPREROTATED)) && (output_desc.Rotation == DXGI_MODE_ROTATION_ROTATE90 || output_desc.Rotation == DXGI_MODE_ROTATION_ROTATE270);
 
@@ -1869,8 +1846,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 window_width = window_height;
                 window_height = tmp;
             }
-          
-
 
             DXGI_MODE_DESC target_mode = {
                 .Width = window_width,
@@ -1880,9 +1855,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             swapchain4->ResizeTarget(&target_mode);
 
-
             UINT frameIndex = swapchain4->GetCurrentBackBufferIndex();
-
 
             // Reset the command list
             //flushGpu();
@@ -1902,11 +1875,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 fenceValues[i] = fenceValues[frameIndex]; // ??
             }
 
-
-
             commandAllocator->Reset();
             commandList->Reset(commandAllocator, nullptr);            
-
 
             //DXGI_OUTPUT_DESC output_desc;
             //DXGI_OUTPUT_DESC1 output_desc1;
@@ -1924,9 +1894,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 exit(EXIT_FAILURE);
             }
 
-
             frameIndex = swapchain4->GetCurrentBackBufferIndex();
-
 
             // Get buffer and create a render-target-view.
             {
@@ -1956,7 +1924,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                         OutputDebugStringA("Failed to create render target view\n");
                         exit(EXIT_FAILURE);
                     }
-
 
                     wchar_t name[32];
                     wsprintf(name, L"Framebuffer %d of %d", i, numFrames);
@@ -2027,7 +1994,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             pso->Release();
             pso = nullptr;
- 
+
 
             //device_context_11_x->DiscardView(render_target_view);
             //device_context_11_x->DiscardResource(shaderConstantBuffer_dims);
@@ -2036,7 +2003,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             //device_context_11_x->VSSetShader(nullptr, 0, 0);
             //device_context_11_x->PSSetShader(nullptr, 0, 0);
             //device_context_11_x->OMSetRenderTargets(0, nullptr, nullptr);
-
 
             //shaderConstantBuffer_dims->Release();
             //shaderConstantBuffer_dims = nullptr;
@@ -2053,7 +2019,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             //device_context_11_x->Release();
             //device_context_11_x = nullptr;
-
 
             ID3D12InfoQueue* info;
             device->QueryInterface(IID_PPV_ARGS(&info));
@@ -2072,8 +2037,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             device->Release();
             device = nullptr;
-
-
 
             dxgi_debug_report();
             PostQuitMessage(0);

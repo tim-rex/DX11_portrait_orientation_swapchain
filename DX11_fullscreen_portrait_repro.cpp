@@ -1390,14 +1390,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         device_context_11_x->DiscardView(render_target_view);
         device_context_11_x->DiscardResource(shaderConstantBuffer_dims);
 
+        shaderConstantBuffer_dims->Release();
+        shaderConstantBuffer_dims = nullptr;
+
         device_context_11_x->VSSetConstantBuffers(0, 0, nullptr);
         device_context_11_x->VSSetShader(nullptr, 0, 0);
         device_context_11_x->PSSetShader(nullptr, 0, 0);
         device_context_11_x->OMSetRenderTargets(0, nullptr, nullptr);
 
-
-        shaderConstantBuffer_dims->Release();
-        shaderConstantBuffer_dims = nullptr;
 
         //input_layout_ptr->Release();
         render_target_view->Release();
