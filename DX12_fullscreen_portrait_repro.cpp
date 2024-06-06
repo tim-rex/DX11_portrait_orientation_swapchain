@@ -6,7 +6,9 @@
 #pragma comment( lib, "user32" )          // link against the win32 library
 #pragma comment( lib, "d3d12.lib" )
 #pragma comment( lib, "dxgi.lib" )        // directx graphics interface
-#pragma comment( lib, "d3dcompiler.lib" ) // shader compiler
+//#pragma comment( lib, "d3dcompiler.lib" ) // shader compiler
+#pragma comment( lib, "dxcompiler.lib" ) // DX12 shader compiler
+
 #pragma comment( lib, "dxguid.lib" )
 
 
@@ -15,6 +17,8 @@
 
 #include <d3d12.h>
 #include <dxgi1_6.h>
+
+#include <dxcapi.h> // DX12 shader compiler
 
 #include <dxgidebug.h>   // DXGI_INFO_QUEUE
 
@@ -142,6 +146,25 @@ UINT window_width = 0;
 UINT window_height = 0;
 BOOL DXGI_fullscreen = false;
 BOOL allowTearing = false;
+
+BOOL framechanged = false;
+
+
+
+// Define the constant data used to communicate with shaders.
+struct VS_CONSTANT_BUFFER
+{
+    float width;
+    float height;
+    float padding[62]; // Padding so the constant buffer is 256-byte aligned.
+} VS_CONSTANT_BUFFER;
+
+static_assert((sizeof(VS_CONSTANT_BUFFER) % 256) == 0, "Constant Buffer size must be 256-byte aligned");
+
+struct VS_CONSTANT_BUFFER VsConstData_dims = {};
+
+uint8_t* persistentlyMappedConstantBuffer = nullptr;
+D3D12_CONSTANT_BUFFER_VIEW_DESC constantBufferView;
 
 
 void dxgi_debug_report()
@@ -317,6 +340,8 @@ void dxgi_debug_post_device_init()
 
 ID3D12CommandQueue* commandQueue = nullptr;
 ID3D12DescriptorHeap* rtvHeap = nullptr;
+ID3D12DescriptorHeap* cbvHeap = nullptr;
+
 ID3D12Resource2* framebuffer[numFrames] = {};
 
 
@@ -326,6 +351,10 @@ ID3D12GraphicsCommandList* commandList = nullptr;
 
 // TODO: We're not yet using a custom pipeline state
 ID3D12PipelineState* pipelineState = nullptr;
+
+ID3D12RootSignature* rootSig = nullptr;
+ID3D12PipelineState* pso = nullptr;
+
 
 
 ID3D12Fence1* fence = nullptr;
@@ -347,6 +376,13 @@ D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {
     .NodeMask = 0
 };
 
+
+D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc = {
+    .Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
+    .NumDescriptors = 1,
+    .Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
+    .NodeMask = 0
+};
 
 
 void InitD3D12(void)
@@ -710,6 +746,7 @@ void InitD3D12(void)
     
         // First obtain the framebuffer images from the swapchain
 
+#if 0   // Buffer should be provided by the swapchain, we don't need to create our own here
         D3D12_HEAP_PROPERTIES heapProperties = {
             .Type = D3D12_HEAP_TYPE_DEFAULT,
         };
@@ -723,7 +760,6 @@ void InitD3D12(void)
         UINT height = rect.bottom - rect.top;
         
 
-#if 0   // Buffer should be provided by the swapchain, we don't need to create our own here
         D3D12_RESOURCE_DESC resourceDesc = {
             .Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
             .Alignment = 0,
@@ -769,21 +805,22 @@ void InitD3D12(void)
 
 
         // We need a descriptor heap for the render target view
-
-        //ID3D12Heap1 *rtvHeap = nullptr;
-        //ID3D12Heap* rtvHeap = nullptr;
-        rtvHeap = nullptr;
-
-        result = device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&rtvHeap));
-        rtvHeap->SetName(L"rtvDescriptorHeap");
-
-        if (FAILED(result))
         {
-            OutputDebugStringA("Failed to CreateDescriptorHeap\n");
-            exit(EXIT_FAILURE);
-        }
+            //ID3D12Heap1 *rtvHeap = nullptr;
+            //ID3D12Heap* rtvHeap = nullptr;
+            rtvHeap = nullptr;
 
-        rtvHeap->SetName(L"rtvHeap");
+            result = device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&rtvHeap));
+            rtvHeap->SetName(L"rtvDescriptorHeap");
+
+            if (FAILED(result))
+            {
+                OutputDebugStringA("Failed to CreateDescriptorHeap\n");
+                exit(EXIT_FAILURE);
+            }
+
+            rtvHeap->SetName(L"rtvHeap");
+        }
 
         
         // Create render target views for each swapchain image
@@ -830,6 +867,24 @@ void InitD3D12(void)
                 OutputDebugStringA("Failed to create fence event");
                 exit(EXIT_FAILURE);
             }            
+        }
+
+
+        // We also need a heap for our constant uniform buffer
+                // We need a descriptor heap for the render target view
+        {
+            cbvHeap = nullptr;
+
+            result = device->CreateDescriptorHeap(&cbvHeapDesc, IID_PPV_ARGS(&cbvHeap));
+            cbvHeap->SetName(L"rtvDescriptorHeap");
+
+            if (FAILED(result))
+            {
+                OutputDebugStringA("Failed to CreateDescriptorHeap\n");
+                exit(EXIT_FAILURE);
+            }
+
+            cbvHeap->SetName(L"cbvHeap");
         }
 
     }
@@ -920,13 +975,524 @@ void WaitForPreviousFrame(void)
 #endif
 
 
+void InitShaders(void)
+{
+    
+    const char* shaderSource = R"(
+
+        cbuffer ConstantBuffer : register( b0 ) {
+            float width;
+            float height;
+            float padding0;
+            float padding1;
+        };
+
+        /* vertex attributes go here to input to the vertex shader */
+        struct vs_in {
+            uint vertexId : SV_VertexID;
+        };
+
+        /* outputs from vertex shader go here. can be interpolated to pixel shader */
+        struct vs_out {
+            float4 pos : SV_POSITION; // required output of VS
+            float4 colour : COLOR0;
+        };
+
+
+        float2 pixelCoordToNCD(float2 pixel) {
+            float2 ncd = ( (pixel / float2(width, height)) - float2(0.5, 0.5)) * 2;
+            return ncd;
+        }
+
+        vs_out vs_main(vs_in input) {
+          vs_out output = (vs_out)0; // zero the memory first
+
+
+          // Center triangle
+
+          if (input.vertexId == 0)
+              output.pos = float4(0.5, -0.5, 0.5, 1.0);
+          else if (input.vertexId == 1)
+              output.pos = float4(-0.5, -0.5, 0.5, 1.0);
+          else if (input.vertexId == 2)
+              output.pos = float4(0.0, 0.5, 0.5, 1.0);
+
+
+          // Top Left triangle
+
+          if (input.vertexId == 3)
+              output.pos = float4(-0.9, 0.9, 0.5, 1.0);
+          else if (input.vertexId == 4)
+              output.pos = float4(-0.8, 0.9, 0.5, 1.0);
+          else if (input.vertexId == 5)
+              output.pos = float4(-0.9, 0.8, 0.5, 1.0);
+
+
+          // Top Right triangle
+
+          if (input.vertexId == 6)
+              output.pos = float4(0.9, 0.9, 0.5, 1.0);
+          else if (input.vertexId == 7)
+              output.pos = float4(0.9, 0.8, 0.5, 1.0);
+          else if (input.vertexId == 8)
+              output.pos = float4(0.8, 0.9, 0.5, 1.0);
+
+
+          // Bottom Left triangle
+
+          if (input.vertexId == 9)
+              output.pos = float4(-0.9, -0.8, 0.5, 1.0);
+          else if (input.vertexId == 10)
+              output.pos = float4(-0.8, -0.9, 0.5, 1.0);
+          else if (input.vertexId == 11)
+              output.pos = float4(-0.9, -0.9, 0.5, 1.0);
+
+
+          // Bottom Right triangle
+
+          if (input.vertexId == 12)
+              output.pos = float4(0.9, -0.8, 0.5, 1.0);
+          else if (input.vertexId == 13)
+              output.pos = float4(0.9, -0.9, 0.5, 1.0);
+          else if (input.vertexId == 14)
+              output.pos = float4(0.8, -0.9, 0.5, 1.0);
+
+
+          // Now, using the frame dimensions, a solitary fixed dimension square 100x100 in the middle of the screen
+          // The pixel dimensions need to be scaled against the NDC space
+
+          float2 center = float2(width / 2, height / 2);
+
+          float2 topleft     = pixelCoordToNCD(center + float2(-50, +50));
+          float2 topright    = pixelCoordToNCD(center + float2(+50, +50));
+
+          float2 bottomleft  = pixelCoordToNCD(center + float2(-50, -50));
+          float2 bottomright = pixelCoordToNCD(center + float2(+50, -50));
+          
+          if (input.vertexId == 15)
+              output.pos = float4(topleft, 0.5, 1.0);
+          else if (input.vertexId == 16)
+              output.pos = float4(topright, 0.5, 1.0);
+          else if (input.vertexId == 17)
+              output.pos = float4(bottomleft, 0.5, 1.0);
+
+          else if (input.vertexId == 18)
+              output.pos = float4(topright, 0.5, 1.0);
+          else if (input.vertexId == 19)
+              output.pos = float4(bottomright, 0.5, 1.0);
+          else if (input.vertexId == 20)
+              output.pos = float4(bottomleft, 0.5, 1.0);
+
+          
+          if (input.vertexId >= 15)
+              output.colour = float4(1.0, 1.0, 0.0, 1.0);
+          else
+              output.colour = clamp(output.pos, 0, 1);
+          return output;
+        }
+
+
+        struct ps_in {
+            float4 pos :  SV_POSITION;
+            linear float4 colour : COLOR0;
+        };
+
+        struct ps_out {
+            float4 colour : SV_TARGET;
+        };
+
+        ps_out ps_main(ps_in input) {
+            ps_out output;
+            output.colour = input.colour;
+            //output.colour = float4(1.0, 1.0, 0.0, 1.0);
+            return output;
+        }
+)";
+
+     const DxcBuffer shaderSourceBuffer = {
+        .Ptr = shaderSource,
+        .Size = strlen(shaderSource),
+        .Encoding = 0
+     };
+
+
+    HRESULT hr = 0;
+    
+    //IDxcLibrary* library = nullptr;
+    IDxcCompiler3* compiler = nullptr;
+    //IDxcBlobEncoding* sourceBlob = nullptr;
+
+    IDxcUtils *utils = nullptr;
+
+    /*
+    hr = DxcCreateInstance(CLSID_DxcLibrary, IID_PPV_ARGS(&library));
+
+    if (FAILED(hr))
+    {
+        OutputDebugStringA("Failed to create Dxc library isntance\n");
+        exit(EXIT_FAILURE);
+    }
+    */
+
+    
+    hr = DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler));
+
+    if (FAILED(hr))
+    {
+        OutputDebugStringA("Failed to create Dxc compiler instance\n");
+        exit(EXIT_FAILURE);
+    }
+
+    /*
+    uint32_t codePage = CP_UTF8;
+    
+    //hr = library->CreateBlobFromFile(L"PS.hlsl", &codePage, &sourceBlob);    
+    hr = library->CreateBlobWithEncodingOnHeapCopy(shaderSource, (uint32_t) strlen(shaderSource), codePage, &sourceBlob);
+
+    if (FAILED(hr))
+    {
+        OutputDebugStringA("Failed to create shader blob with encoding on heap copy\n");
+        exit(EXIT_FAILURE);
+    }
+    */
+
+    hr = DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&utils));
+
+    if (FAILED(hr))
+    {
+        OutputDebugStringA("Failed to create Dxc utils instance\n");
+        exit(EXIT_FAILURE);
+    }
+
+
+    IDxcBlob* vs_code;
+    IDxcBlob* ps_code;
+
+    {
+        IDxcOperationResult* result;
+        IDxcCompilerArgs* args = nullptr;
+
+        hr = utils->BuildArguments(
+            //nullptr,
+            //L"shader.hlsl",
+            LR"(C:\Users\Tim Kane\test.hlsl)",
+            L"vs_main",
+            L"vs_6_5",
+            nullptr, // LPCWSTR * pArguments,
+            0,       // UINT32           argCount,
+            nullptr, // const DxcDefine * pDefines,
+            0,       // UINT32           defineCount,
+            &args
+        );
+
+        if (FAILED(hr))
+        {
+            OutputDebugStringA("Failed to create VS build arguments\n");
+            exit(EXIT_FAILURE);
+        }
+
+        hr = compiler->Compile(
+            &shaderSourceBuffer,
+            args->GetArguments(), args->GetCount(),
+            nullptr,
+            IID_PPV_ARGS(&result));
+
+        if (SUCCEEDED(hr))
+            result->GetStatus(&hr);
+
+        if (FAILED(hr))
+        {
+            OutputDebugStringA("Failed to compile vertex shader blob\n");
+
+            if (result)
+            {
+                IDxcBlobEncoding* errorsBlob;
+                hr = result->GetErrorBuffer(&errorsBlob);
+                if (SUCCEEDED(hr) && errorsBlob)
+                {
+                    char msg[2048];
+                    snprintf(msg, 2048, "VS Compilation failed with errors:\n%hs\n", (const char*)errorsBlob->GetBufferPointer());
+                    OutputDebugStringA(msg);
+                }
+            }
+
+            exit(EXIT_FAILURE);
+        }
+
+        result->GetResult(&vs_code);
+        result->Release();
+    }
+
+    {
+        IDxcOperationResult* result;
+        IDxcCompilerArgs* args = nullptr;
+
+        hr = utils->BuildArguments(L"shader.hlsl",
+            L"ps_main",
+            L"ps_6_5",
+            nullptr, // LPCWSTR * pArguments,
+            0,       // UINT32           argCount,
+            nullptr, // const DxcDefine * pDefines,
+            0,       // UINT32           defineCount,
+            &args
+        );
+
+        if (FAILED(hr))
+        {
+            OutputDebugStringA("Failed to create VS build arguments\n");
+            exit(EXIT_FAILURE);
+        }
+
+        hr = compiler->Compile(
+            &shaderSourceBuffer,
+            args->GetArguments(), args->GetCount(),
+            nullptr,
+            IID_PPV_ARGS(&result));
+
+        if (SUCCEEDED(hr))
+            result->GetStatus(&hr);
+
+        if (FAILED(hr))
+        {
+            OutputDebugStringA("Failed to compile pixel shader blob\n");
+
+            if (result)
+            {
+                IDxcBlobEncoding* errorsBlob;
+                hr = result->GetErrorBuffer(&errorsBlob);
+                if (SUCCEEDED(hr) && errorsBlob)
+                {
+                    char msg[2048];
+                    snprintf(msg, 2048, "PS Compilation failed with errors:\n%hs\n", (const char*)errorsBlob->GetBufferPointer());
+                    OutputDebugStringA(msg);
+                }
+            }
+
+            exit(EXIT_FAILURE);
+        }
+
+        result->GetResult(&ps_code);
+        result->Release();
+    }
+
+    utils->Release();
+    compiler->Release();
+    
+    utils = nullptr;
+    compiler = nullptr;
+
+
+    // We need a root signature (defined globally)
+    //ID3D12RootSignature *rootSig = nullptr;
+
+    ID3DBlob* rootSigBlob = nullptr;
+
+    ID3DBlob* errorsBlob = nullptr;
+
+
+    D3D12_ROOT_PARAMETER1 params[] = {
+        {
+            .ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV,
+            /*
+            .Constants = {
+                .ShaderRegister = 0,
+                .RegisterSpace = 0,
+                .Num32BitValues = 1
+            },
+            */
+            .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
+        }
+    };
+
+    //D3D12_ROOT_SIGNATURE_DESC rootSigDesc = {
+    D3D12_VERSIONED_ROOT_SIGNATURE_DESC rootSigDesc = {
+        .Version = D3D_ROOT_SIGNATURE_VERSION_1_1,
+        .Desc_1_1 = {
+            .NumParameters = ARRAY_COUNT(params),
+            .pParameters = params,
+            .NumStaticSamplers = 0,
+            .pStaticSamplers = nullptr,
+            .Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE
+        }
+    };
+
+
+    //hr = D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1_1, &rootSigBlob, &errorsBlob);
+
+    hr = D3D12SerializeVersionedRootSignature(&rootSigDesc, &rootSigBlob, &errorsBlob);
+
+    if (FAILED(hr))
+    {
+        char msg[2048];
+
+        if (errorsBlob)
+        {
+            snprintf(msg, 2048, "Failed to deserialise root sig (hr = %x):\n%hs\n", hr, (const char*)errorsBlob->GetBufferPointer());
+            OutputDebugStringA(msg);
+            exit(EXIT_FAILURE);
+        }
+
+        snprintf(msg, 2048, "Failed to deserialise root sig (hr = %x): no error blob\n", hr);
+        OutputDebugStringA(msg);
+        exit(EXIT_FAILURE);
+    }
+
+
+    
+    device->CreateRootSignature(0, rootSigBlob->GetBufferPointer(), rootSigBlob->GetBufferSize(), IID_PPV_ARGS(&rootSig));
+    
+    D3D12_RENDER_TARGET_BLEND_DESC renderTargetBlendStates = {
+        .SrcBlend = D3D12_BLEND_ONE,
+        .DestBlend = D3D12_BLEND_ZERO,
+        .BlendOp = D3D12_BLEND_OP_ADD,
+        .SrcBlendAlpha = D3D12_BLEND_ONE,
+        .DestBlendAlpha = D3D12_BLEND_ZERO,
+        .BlendOpAlpha = D3D12_BLEND_OP_ADD,
+        .LogicOp = D3D12_LOGIC_OP_NOOP,
+        .RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL        
+    };
+
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {
+        .pRootSignature = rootSig,
+        .VS = {
+            .pShaderBytecode = vs_code->GetBufferPointer(),
+            .BytecodeLength = vs_code->GetBufferSize()
+            },
+        .PS = {
+            .pShaderBytecode = ps_code->GetBufferPointer(),
+            .BytecodeLength = ps_code->GetBufferSize()
+            },
+
+        .BlendState = {
+            .AlphaToCoverageEnable = false,
+            .IndependentBlendEnable = false,
+            .RenderTarget = { renderTargetBlendStates }
+            },
+
+        .SampleMask = UINT_MAX,
+
+        .RasterizerState = {
+            .FillMode = D3D12_FILL_MODE_SOLID,
+            .CullMode = D3D12_CULL_MODE_BACK
+            },
+        .PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
+        .NumRenderTargets = 1,
+        .RTVFormats = { DXGI_FORMAT_B8G8R8A8_UNORM_SRGB },
+        .SampleDesc = {
+            .Count = 1,
+            .Quality = 0
+            },
+        .Flags = D3D12_PIPELINE_STATE_FLAG_NONE
+    };
+    
+
+/*
+#if defined( DEBUG ) || defined( _DEBUG )
+    // Only valid on WARP devices
+    .Flags = D3D12_PIPELINE_STATE_FLAG_TOOL_DEBUG
+#else
+    .Flags = 0
+#endif
+*/
+
+
+
+
+    hr = device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pso));
+
+    if (FAILED(hr))
+    {
+        OutputDebugStringA("Failed to create pipeline state object\n");
+        exit(EXIT_FAILURE);
+    }
+
+
+
+
+    // Create a constant buffer (for framebuffer dimensions
+
+    {
+        ID3D12Resource *constantBuffer = nullptr;
+
+        D3D12_HEAP_PROPERTIES heapProperties = {
+            .Type = D3D12_HEAP_TYPE_UPLOAD
+        };
+
+        D3D12_HEAP_FLAGS heapFlags = D3D12_HEAP_FLAG_NONE;
+
+        D3D12_RESOURCE_DESC resourceDesc = {
+            .Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
+            .Alignment = 0,
+            .Width = sizeof(VS_CONSTANT_BUFFER),
+            .Height = 1,
+            .DepthOrArraySize = 1,
+            .MipLevels = 1,
+            .SampleDesc = {
+                .Count = 1,
+                .Quality = 0
+                },
+            .Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+            .Flags = D3D12_RESOURCE_FLAG_NONE
+        };
+
+
+        hr = device->CreateCommittedResource(
+            &heapProperties,
+            heapFlags,
+            &resourceDesc,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            nullptr,
+            IID_PPV_ARGS(&constantBuffer));
+
+        assert(SUCCEEDED(hr));
+
+        constantBuffer->SetName(L"constant buffer");
+
+
+
+        constantBufferView = {
+            .BufferLocation = constantBuffer->GetGPUVirtualAddress(),
+            .SizeInBytes = (UINT) resourceDesc.Width
+        };
+
+        D3D12_CPU_DESCRIPTOR_HANDLE cpuDestDesc = {
+            
+        };
+
+        device->CreateConstantBufferView(&constantBufferView, cbvHeap->GetCPUDescriptorHandleForHeapStart());
+
+
+
+        // Map and initialize the constant buffer.
+        // We don't unmap this until the app closes.
+        // Keeping things mapped for the lifetime of the resource is okay.
+        // Ref: https://github.com/microsoft/DirectX-Graphics-Samples/blob/master/Samples/Desktop/D3D12HelloWorld/src/HelloConstBuffers/D3D12HelloConstBuffers.cpp
+
+        D3D12_RANGE readRange = { 0, 0 };
+        
+#if 1
+        hr = constantBuffer->Map(0, &readRange, (void **)&persistentlyMappedConstantBuffer);
+        memcpy(persistentlyMappedConstantBuffer, &VsConstData_dims, sizeof(VsConstData_dims));
+#else
+        uint8_t* destPtr;
+        hr = constantBuffer->Map(0, &readRange, (void**)&destPtr);
+        memcpy(destPtr, &VsConstData_dims, sizeof(VsConstData_dims));
+        constantBuffer->Unmap(0, sizeof(VsConstData_dims));
+#endif
+
+    }
+
+
+
+}
+
 void render(void)
 {
     UINT frameIndex = swapchain4->GetCurrentBackBufferIndex();
 
     // Now start rendering
     
-    commandList->Reset(commandAllocator, nullptr);
+    commandList->Reset(commandAllocator, pso);
 
     // Indicate that the back buffer will be used as a render target
 
@@ -946,8 +1512,31 @@ void render(void)
         commandList->ResourceBarrier(1, &resourceBarrierTransitionPresentTarget);
     }
     
-    // TODO: Set root signature
-    //commandList1->SetGraphicsRootSignature(rootsig);
+
+    // Set the root signature before doing anything
+
+    commandList->SetGraphicsRootSignature(rootSig);
+
+    // Set descriptor heaps
+    {
+
+        ID3D12DescriptorHeap* ppHeaps[] = { cbvHeap };
+        commandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
+
+        // Already defined by root signature
+        //commandList->SetGraphicsRootDescriptorTable(0, cbvHeap->GetGPUDescriptorHandleForHeapStart());
+
+        commandList->SetGraphicsRootConstantBufferView(0, constantBufferView.BufferLocation);
+    }
+
+
+    {
+        // Ref: https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nn-d3d12-id3d12pipelinestate
+        
+        
+        commandList->SetPipelineState(pso);
+        commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    }
 
 
     // Clear the backbuffer entirely
@@ -965,11 +1554,13 @@ void render(void)
             (FLOAT)window_height,
             0.0f, 1.0f  // DepthMin, DepthMax
         };
+        D3D12_RECT scissorRect = { 0, 0, (LONG) window_width, (LONG) window_height };
 
         char msg[1024];
         snprintf(msg, 1024, "render time viewport dimensions %f x %f\n", viewport.Width, viewport.Height);
         OutputDebugStringA(msg);
         commandList->RSSetViewports(1, &viewport);
+        commandList->RSSetScissorRects(1, &scissorRect);
     }
 
 
@@ -1041,6 +1632,30 @@ void render(void)
     }
 
 
+
+
+    // Draw something, we don't use vertex buffers - all the magic happens in the vertex shader
+    {
+        // Update constant data (frame dimensions
+
+
+        if (framechanged)
+        {
+            VsConstData_dims.width = (float)window_width;
+            VsConstData_dims.height = (float)window_height;
+            framechanged = false;
+
+            assert(persistentlyMappedConstantBuffer);
+            memcpy(persistentlyMappedConstantBuffer, &VsConstData_dims, sizeof(VsConstData_dims));
+        }
+
+
+        commandList->DrawInstanced(21, 1, 0, 0);
+    }
+
+
+
+    // Drawing complete
     // Indicate that the back buffer will be used to present
 
     {
@@ -1058,7 +1673,6 @@ void render(void)
 
         commandList->ResourceBarrier(1, &resourceBarrierTransitionTargetPresent);
     }
-
 
     commandList->Close();
 
@@ -1091,6 +1705,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    }
 
    InitD3D12();
+   InitShaders();
 
    ShowWindow(hWnd, nCmdShow);
    UpdateWindow(hWnd);
@@ -1199,6 +1814,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             snprintf(msg, 1024, "New WM_SIZE event: %d x %d\n", LOWORD(lParam), HIWORD(lParam));
 
             OutputDebugStringA(msg);
+
+            framechanged = true;
 
             UINT swapchain_flags = 0;
             //swapchain_flags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
@@ -1368,7 +1985,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 0.0f, 1.0f  // DepthMin, DepthMax
             };
 
+            D3D12_RECT scissorRect = { 0, 0, (LONG) window_width, (LONG) window_height };
+
             commandList->RSSetViewports(1, &viewport);
+            commandList->RSSetScissorRects(1, &scissorRect);
             commandList->Close();
             ID3D12CommandList* ppCommandLists[] = { commandList };
             commandQueue->ExecuteCommandLists(1, ppCommandLists);
@@ -1405,6 +2025,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             fence->Release();
             commandQueue->Release();
 
+            pso->Release();
+            pso = nullptr;
+ 
 
             //device_context_11_x->DiscardView(render_target_view);
             //device_context_11_x->DiscardResource(shaderConstantBuffer_dims);
