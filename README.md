@@ -5,7 +5,7 @@ Note that this is *not* production quality code by any stretch.
 It represents a simple minimal repro of an issue I'm having elsewhere. It does not pretend to follow any reasonable coding standard :)
 
 # The Issue
-In DX11, creating a swapchain with `DXGI_SCALING_NONE` causes a <b>fullscreen</b> swapchain against a **portrait** orientation display to be incorrectly scaled
+In DX11, creating a swapchain with `DXGI_SCALING_NONE` causes a <b>fullscreen</b> swapchain against a **portrait** orientation display to be incorrectly scaled.
 
 # Mitigation
 See <a href="https://github.com/tim-rex/DX11_portrait_orientation_swapchain/pull/2">this</a> pull request, based directly from <a href="https://github.com/tim-rex/DX11_portrait_orientation_swapchain/tree/DX11_portrait_fullscreen_workaround">this</a> branch
@@ -18,6 +18,14 @@ The mitigation here is to build the swapchain using `DXGI_SCALING_STRETCH` howev
 - Documentation indicates that an application <i>"does not need to worry about monitor orientation"</i> but that isn't strictly true it seems
 - This is not required in landscape orientation
 - This does not seem to be required in DX12 (likely due to explicit handling of swapchain image transitions)
+
+# Mitigation 2
+After significat troubleshooting, it turns out the issue **does not occur** if I explicitly **disable** full screen optimisations via the compatibility tab.
+No need for DXGI_SCALING_STRETCH (per mitigation #1, which had other undesirable side effects.. eg: stretching :) )
+
+![image](https://github.com/tim-rex/DX11_portrait_orientation_swapchain/assets/19639392/4f8e930e-61b4-4c74-b3b9-9d49c98d3e57)
+
+<a href="https://devblogs.microsoft.com/directx/demystifying-full-screen-optimizations/#comments">Reference</a>: I'm only 5 years too late to the party
 
 
 # Building
