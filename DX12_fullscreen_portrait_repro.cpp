@@ -478,6 +478,20 @@ void InitD3D12(void)
         exit(EXIT_FAILURE);
     }
 
+    DXGI_ADAPTER_DESC3 desc;
+    result = dxgiAdapter->GetDesc3(&desc);
+
+    if (FAILED(result))
+    {
+        OutputDebugStringA("Failed to get adapter desc\n");
+        exit(EXIT_FAILURE);
+    }
+
+    OutputDebugStringW(desc.Description);
+    OutputDebugStringW(L"\n");
+
+
+
     dxgi_debug_post_device_init();
 
 
