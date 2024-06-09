@@ -1610,9 +1610,11 @@ void render(void)
         };
         D3D12_RECT scissorRect = { 0, 0, (LONG) window_width, (LONG) window_height };
 
+        /*
         char msg[1024];
         snprintf(msg, 1024, "render time viewport dimensions %f x %f\n", viewport.Width, viewport.Height);
         OutputDebugStringA(msg);
+        */
         commandList->RSSetViewports(1, &viewport);
         commandList->RSSetScissorRects(1, &scissorRect);
     }
