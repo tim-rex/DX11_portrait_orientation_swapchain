@@ -1192,7 +1192,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 DXGI_MODE_DESC target_mode = {
                     .Width = window_width,
                     .Height = window_height,
-                    .Format = DXGI_FORMAT_UNKNOWN
+                    .Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
                 };
 
                 if (apply_rotation)
@@ -1343,7 +1343,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 
 
-            hr = device->CreateRenderTargetView(pBuffer, NULL, &render_target_view);
+            D3D11_RENDER_TARGET_VIEW_DESC rtvDesc = {
+                .Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+                .ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D,
+            };
+
+            hr = device->CreateRenderTargetView(pBuffer, &rtvDesc, &render_target_view);
 
             if (FAILED(hr))
             {
