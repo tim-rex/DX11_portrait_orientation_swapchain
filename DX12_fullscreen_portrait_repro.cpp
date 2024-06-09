@@ -214,10 +214,12 @@ void dxgi_debug_pre_device_init()
 
 
     }
+#endif
 }
 
 void dxgi_debug_post_device_init()
 {
+#ifndef NDEBUG
     assert(device);
 
     // Debug
@@ -2042,6 +2044,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             //device_context_11_x->Release();
             //device_context_11_x = nullptr;
 
+#ifndef NDEBUG
             ID3D12InfoQueue* info;
             device->QueryInterface(IID_PPV_ARGS(&info));
             info->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, FALSE);
@@ -2056,6 +2059,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             infoqueue->SetBreakOnCategory(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_CATEGORY_STATE_CREATION, FALSE);
             infoqueue->Release();
             infoqueue = nullptr;
+#endif
 
             device->Release();
             device = nullptr;

@@ -1417,13 +1417,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         device_context_11_x->Release();
         device_context_11_x = nullptr;
 
-
+#ifndef NDEBUG
         ID3D11InfoQueue* info;
         device->QueryInterface(IID_PPV_ARGS(&info));
         info->SetBreakOnSeverity(D3D11_MESSAGE_SEVERITY_WARNING, FALSE);
         info->SetBreakOnCategory(D3D11_MESSAGE_CATEGORY_STATE_CREATION, FALSE);
         info->Release();
         info = nullptr;
+#endif
 
         IDXGIInfoQueue* infoqueue;
         DXGIGetDebugInterface1(0, IID_PPV_ARGS(& infoqueue));
