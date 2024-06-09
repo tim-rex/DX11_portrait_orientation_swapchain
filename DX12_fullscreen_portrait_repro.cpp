@@ -348,11 +348,17 @@ ID3D12Resource2* framebuffer[numFrames] = {};
 
 
 // We need a command allocater + command list
-ID3D12CommandAllocator* commandAllocator = nullptr;
-ID3D12GraphicsCommandList* commandList = nullptr;
 
-// TODO: We're not yet using a custom pipeline state
-ID3D12PipelineState* pipelineState = nullptr;
+// TEST USING MULTIPLE COMMAND ALLOCATORS
+#define MULTIPLE_COMMAND_ALLOCATORS 1
+#if MULTIPLE_COMMAND_ALLOCATORS
+ID3D12CommandAllocator* commandAllocator[numFrames] = {};
+#else
+ID3D12CommandAllocator* commandAllocator[1] = {};
+#endif
+
+
+ID3D12GraphicsCommandList* commandList = nullptr;
 
 ID3D12RootSignature* rootSig = nullptr;
 ID3D12PipelineState* pso = nullptr;
@@ -907,8 +913,13 @@ void InitD3D12(void)
 
 
     // Create a command allocator
+#if MULTIPLE_COMMAND_ALLOCATORS
+    for (int i=0; i < numFrames; i++)
+#else
+    for (int i = 0; i < 1; i++)
+#endif
     {
-        HRESULT result = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&commandAllocator));
+        HRESULT result = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&commandAllocator[i]));
 
         if (FAILED(result))
         {
@@ -916,24 +927,14 @@ void InitD3D12(void)
             exit(EXIT_FAILURE);
         }
 
-        commandAllocator->SetName(L"allocator");
+        wchar_t name[32];
+        
+        _snwprintf_s(name, 32, L"command allocator %d", i);
+        commandAllocator[i]->SetName(name);
     }
 
 
-    // TODO: Create pipeline state
-    /*
-    {
-        D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
-
-        HRESULT result = device->CreatePipelineState(desc, IID_PPV_ARGS(&pipelineState));
-
-        if (FAILED(result))
-        {
-            OutputDebugStringA("Failed to CreatePipelineState\n");
-            exit(EXIT_FAILURE);
-        }
-    }
-    */
+    // Pipeline state is setup later (during shader setup)
 
 
     // Create a command list
@@ -1514,7 +1515,11 @@ void render(void)
 
     // Now start rendering
     
-    commandList->Reset(commandAllocator, pso);
+#if MULTIPLE_COMMAND_ALLOCATORS
+    commandList->Reset(commandAllocator[frameIndex], pso);
+#else
+    commandList->Reset(commandAllocator[0], pso);
+#endif
 
     // Indicate that the back buffer will be used as a render target
 
@@ -1899,8 +1904,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 fenceValues[i] = fenceValues[frameIndex]; // ??
             }
 
-            commandAllocator->Reset();
-            commandList->Reset(commandAllocator, nullptr);            
+#if MULTIPLE_COMMAND_ALLOCATORS
+            commandAllocator[frameIndex]->Reset();
+            commandList->Reset(commandAllocator[frameIndex], nullptr);
+#else
+            commandAllocator[0]->Reset();
+            commandList->Reset(commandAllocator[0], nullptr);
+#endif
 
             //DXGI_OUTPUT_DESC output_desc;
             //DXGI_OUTPUT_DESC1 output_desc1;
@@ -2012,7 +2022,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             }
 
             commandList->Release();
-            commandAllocator->Release();
+
+#if MULTIPLE_COMMAND_ALLOCATORS
+            for (UINT i = 0; i < numFrames; i++)
+                commandAllocator[i]->Release();
+#else
+            commandAllocator[0]->Release();
+#endif
+
             fence->Release();
             commandQueue->Release();
 
