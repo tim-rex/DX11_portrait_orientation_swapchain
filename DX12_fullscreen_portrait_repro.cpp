@@ -722,6 +722,7 @@ void InitD3D12(void)
 
 
         if (best_fullscreen_mode)
+        //if (0)
         {
             swapchain_descriptor.Format = best_fullscreen_mode->Format;
             swapchain_descriptor.Width = best_fullscreen_mode->Width;
@@ -745,6 +746,13 @@ void InitD3D12(void)
             .Windowed = windowed
         };
 
+        //if (best_fullscreen_mode)
+        if (0)
+        {
+            fullscreen_desc.RefreshRate = best_fullscreen_mode->RefreshRate;
+            fullscreen_desc.Scaling = best_fullscreen_mode->Scaling;
+            fullscreen_desc.ScanlineOrdering = best_fullscreen_mode->ScanlineOrdering;
+        }
 
         IDXGISwapChain1 *swapchain1;
         // For Direct3D 12 this is a pointer to a direct command queue (refer to ID3D12CommandQueue).
