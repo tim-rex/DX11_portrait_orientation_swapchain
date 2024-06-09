@@ -529,6 +529,9 @@ void InitD3D11(void)
             OutputDebugStringA("Failed to query dxgiOutput6 from dxgiOutput\n");
             exit(EXIT_FAILURE);
         }
+
+        assert(dxgiOutput6);
+
         dxgiOutput->Release();
         dxgiOutput = nullptr;
 
@@ -550,7 +553,22 @@ void InitD3D11(void)
             OutputDebugStringA("DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_CURSOR_STRETCHED == Supported\n");
 
 
-        assert(dxgiOutput6);
+        UINT supported = 0;
+        result = dxgiOutput6->CheckOverlaySupport(DXGI_FORMAT_R8G8B8A8_UNORM, device, &supported);
+        //result = dxgiOutput6->CheckOverlaySupport(DXGI_FORMAT_B8G8R8A8_UNORM, device, &supported);
+
+        if (supported && DXGI_OVERLAY_SUPPORT_FLAG_DIRECT)
+            OutputDebugStringA("DXGI_OVERLAY_SUPPORT_FLAG_DIRECT == Supported\n");
+
+        if (supported && DXGI_OVERLAY_SUPPORT_FLAG_SCALING)
+            OutputDebugStringA("DXGI_OVERLAY_SUPPORT_FLAG_SCALING  == Supported\n");
+
+        if (dxgiOutput6->SupportsOverlays())
+            OutputDebugStringA("Multi plane overlay (MPO) is supported\n");
+        else
+            OutputDebugStringA("Multi plane overlay (MPO) is NOT supported. This may affect the ability to enable tearing support\n");
+
+
 
         UINT flags = 0;
         UINT numModes = 0;
