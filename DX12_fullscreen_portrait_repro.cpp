@@ -1751,11 +1751,13 @@ void render(void)
 }
 
 
+DWORD windowStyle = WS_OVERLAPPEDWINDOW;
+
 BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 {
    hInst = hInstance; // Store instance handle in our global variable
 
-   hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
+   hWnd = CreateWindowW(szWindowClass, szTitle, windowStyle,
       CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, nullptr, nullptr, hInstance, nullptr);
 
    if (!hWnd)
@@ -1770,6 +1772,66 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    UpdateWindow(hWnd);
 
    return TRUE;
+}
+
+
+
+// Convert a styled window into a fullscreen borderless window and back again.
+void ToggleFullscreenWindow(void)
+{
+    static bool windowed_fullscreen = false;
+    static RECT windowRect = {};
+
+    if (DXGI_fullscreen)
+    {
+        // If we're already in FSE, abort
+        // We should only toggle windowed fullscreen if in windowed mode
+        return;
+    }
+
+    if (windowed_fullscreen)
+    {
+        // Restore the window's attributes and size.
+        SetWindowLong(hWnd, GWL_STYLE, windowStyle);
+
+        SetWindowPos(
+            hWnd,
+            HWND_NOTOPMOST,
+            windowRect.left,
+            windowRect.top,
+            windowRect.right - windowRect.left,
+            windowRect.bottom - windowRect.top,
+            SWP_FRAMECHANGED | SWP_NOACTIVATE);
+
+        ShowWindow(hWnd, SW_NORMAL);
+    }
+    else
+    {
+        // Save the old window rect so we can restore it when exiting fullscreen mode.
+        GetWindowRect(hWnd, &windowRect);
+
+        // Make the window borderless so that the client area can fill the screen.
+        SetWindowLong(hWnd, GWL_STYLE, windowStyle & ~(WS_CAPTION | WS_MAXIMIZEBOX | WS_MINIMIZEBOX | WS_SYSMENU | WS_THICKFRAME));
+
+        // Get the settings of the primary display. We want the app to go into
+        // fullscreen mode on the display that supports Independent Flip.
+        DEVMODE devMode = {};
+        devMode.dmSize = sizeof(DEVMODE);
+        EnumDisplaySettings(nullptr, ENUM_CURRENT_SETTINGS, &devMode);
+
+        SetWindowPos(
+            hWnd,
+            HWND_TOPMOST,
+            devMode.dmPosition.x,
+            devMode.dmPosition.y,
+            devMode.dmPosition.x + devMode.dmPelsWidth,
+            devMode.dmPosition.y + devMode.dmPelsHeight,
+            SWP_FRAMECHANGED | SWP_NOACTIVATE);
+
+        ShowWindow(hWnd, SW_MAXIMIZE);
+    }
+
+    windowed_fullscreen = !windowed_fullscreen;
 }
 
 
@@ -1808,7 +1870,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 #if 0
                 IDXGIOutput* output;
-                swapchain->GetContainingOutput(&output);
+                swapchain4->GetContainingOutput(&output);
 
                 DXGI_OUTPUT_DESC output_desc;
                 output->GetDesc(&output_desc);
@@ -1861,6 +1923,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 }
 */
 
+            }
+            else if (wParam == 'f')
+            {
+                // We'll toggle between "windowed fullscreen" and regular "windowed"
+                // As opposed to FSE
+
+                ToggleFullscreenWindow();
             }
             return 0;
 
