@@ -943,9 +943,11 @@ void render(void)
             0.0f, 1.0f  // DepthMin, DepthMax
         };
 
+        /*
         char msg[1024];
         snprintf(msg, 1024, "render time viewport dimensions %f x %f\n", viewport.Width, viewport.Height);
         OutputDebugStringA(msg);
+        */
         commandList->RSSetViewports(1, &viewport);
     }
 
