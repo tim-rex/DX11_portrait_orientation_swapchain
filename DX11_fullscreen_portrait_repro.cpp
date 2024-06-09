@@ -1138,8 +1138,11 @@ void render(void)
     device_context_11_x->Draw(21, 0);   // 7 tri's
 
 
-    const UINT vsync = 1;
-    const UINT presentFlags = 0;
+    const UINT vsync = 0;
+    //const UINT presentFlags = allowTearing ? DXGI_PRESENT_ALLOW_TEARING : 0;
+    const UINT presentFlags = (allowTearing && !DXGI_fullscreen) ? DXGI_PRESENT_ALLOW_TEARING : 0;
+
+
     const DXGI_PRESENT_PARAMETERS presentParameters = {};
 
     swapchain->Present1(vsync, presentFlags, &presentParameters);

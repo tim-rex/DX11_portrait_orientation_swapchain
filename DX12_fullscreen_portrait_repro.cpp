@@ -1723,8 +1723,17 @@ void render(void)
     ID3D12CommandList* ppCommandLists[] = { commandList };
     commandQueue->ExecuteCommandLists(1, ppCommandLists);
 
-    const UINT vsync = 1;
-    const UINT presentFlags = 0;
+    const UINT vsync = 0;
+    const UINT presentFlags = (allowTearing && !DXGI_fullscreen) ? DXGI_PRESENT_ALLOW_TEARING : 0;
+    //const UINT presentFlags = 0;
+
+
+    // The DXGI_PRESENT_ALLOW_TEARING flag cannot be used in an application that is currently in full screen exclusive 
+    // mode (set by calling SetFullscreenState(TRUE)). It can only be used in windowed mode. 
+    // To use this flag in full screen Win32 apps, the application should present to a fullscreen borderless window 
+    // and disable automatic ALT+ENTER fullscreen switching using IDXGIFactory::MakeWindowAssociation. 
+
+
     const DXGI_PRESENT_PARAMETERS presentParameters = {};
 
     swapchain4->Present1(vsync, presentFlags, &presentParameters);
