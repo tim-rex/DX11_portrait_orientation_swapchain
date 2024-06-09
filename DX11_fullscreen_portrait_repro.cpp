@@ -543,7 +543,7 @@ void InitD3D11(void)
         // Consider available display modes. Prefer that which matches our current (ideally native) desktop dimensions
 
         dxgiOutput6->GetDisplayModeList1(
-            DXGI_FORMAT_B8G8R8A8_UNORM,
+            DXGI_FORMAT_R8G8B8A8_UNORM,
             flags,
             &numModes,
             nullptr
@@ -552,7 +552,7 @@ void InitD3D11(void)
         DXGI_MODE_DESC1* mode_descriptions = (DXGI_MODE_DESC1*)malloc(sizeof(DXGI_MODE_DESC1) * numModes);
 
         dxgiOutput6->GetDisplayModeList1(
-            DXGI_FORMAT_B8G8R8A8_UNORM,
+            DXGI_FORMAT_R8G8B8A8_UNORM,
             flags,
             &numModes,
             mode_descriptions
@@ -612,8 +612,8 @@ void InitD3D11(void)
 
 
         DXGI_SWAP_CHAIN_DESC1 swapchain_descriptor = {
-            //.Format = DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, // DXGI_FORMAT_B8G8R8A8_UNORM,
-            .Format = DXGI_FORMAT_B8G8R8A8_UNORM,		// TODO: How to specify SRGB? 
+            //.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, // DXGI_FORMAT_R8G8B8A8_UNORM,
+            .Format = DXGI_FORMAT_R8G8B8A8_UNORM,		// TODO: How to specify SRGB? 
             .SampleDesc = {
                 .Count = 1,
                 .Quality = 0
@@ -690,7 +690,7 @@ void InitD3D11(void)
         // Now we can create the render target image view (pointing at the framebufer images already)
 
         D3D11_RENDER_TARGET_VIEW_DESC rtvDesc = {
-            .Format = DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
+            .Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
             .ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D,
         };
 

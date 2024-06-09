@@ -365,7 +365,7 @@ HANDLE fenceEvent = INVALID_HANDLE_VALUE;
 D3D12_CPU_DESCRIPTOR_HANDLE rtvHandles[numFrames];
 
 D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {
-    .Format = DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
+    .Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
     .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D,
 };
 
@@ -582,7 +582,7 @@ void InitD3D12(void)
         // Consider available display modes. Prefer that which matches our current (ideally native) desktop dimensions
 
         dxgiOutput6->GetDisplayModeList1(
-            DXGI_FORMAT_B8G8R8A8_UNORM,
+            DXGI_FORMAT_R8G8B8A8_UNORM,
             flags,
             &numModes,
             nullptr
@@ -591,7 +591,7 @@ void InitD3D12(void)
         DXGI_MODE_DESC1* mode_descriptions = (DXGI_MODE_DESC1*)malloc(sizeof(DXGI_MODE_DESC1) * numModes);
 
         dxgiOutput6->GetDisplayModeList1(
-            DXGI_FORMAT_B8G8R8A8_UNORM,
+            DXGI_FORMAT_R8G8B8A8_UNORM,
             flags,
             &numModes,
             mode_descriptions
@@ -667,8 +667,8 @@ void InitD3D12(void)
 
 
         DXGI_SWAP_CHAIN_DESC1 swapchain_descriptor = {
-            //.Format = DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, // DXGI_FORMAT_B8G8R8A8_UNORM,
-            .Format = DXGI_FORMAT_B8G8R8A8_UNORM,		// TODO: How to specify SRGB? 
+            //.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, // DXGI_FORMAT_R8G8B8A8_UNORM,
+            .Format = DXGI_FORMAT_R8G8B8A8_UNORM,		// TODO: How to specify SRGB? 
             .SampleDesc = {
                 .Count = 1,
                 .Quality = 0
@@ -689,6 +689,7 @@ void InitD3D12(void)
             swapchain_descriptor.Stereo = best_fullscreen_mode->Stereo;
         }
 
+        
 
         bool windowed = true;
 
@@ -767,7 +768,7 @@ void InitD3D12(void)
             .Height = height,
             .DepthOrArraySize = 1,
             .MipLevels = 1,
-            .Format = DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,           
+            .Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,           
             .SampleDesc = {
                 .Count = 1,
                 .Quality = 0
@@ -780,7 +781,7 @@ void InitD3D12(void)
         //D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_PRESENT;
 
         D3D12_CLEAR_VALUE clearValue = {
-            .Format = DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
+            .Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
             .Color = { 0.2f, 0.2f, 0.7f, 1.0f }
         };
 
@@ -1380,7 +1381,7 @@ void InitShaders(void)
         .DestBlendAlpha = D3D12_BLEND_ZERO,
         .BlendOpAlpha = D3D12_BLEND_OP_ADD,
         .LogicOp = D3D12_LOGIC_OP_NOOP,
-        .RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL        
+        .RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL
     };
 
     D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {
@@ -1408,7 +1409,7 @@ void InitShaders(void)
             },
         .PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
         .NumRenderTargets = 1,
-        .RTVFormats = { DXGI_FORMAT_B8G8R8A8_UNORM_SRGB },
+        .RTVFormats = { DXGI_FORMAT_R8G8B8A8_UNORM_SRGB },
         .SampleDesc = {
             .Count = 1,
             .Quality = 0
@@ -1769,7 +1770,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 DXGI_MODE_DESC target_mode = {
                     .Width = window_width,
                     .Height = window_height,
-                    .Format = DXGI_FORMAT_UNKNOWN
+                    .Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
                 };
 
                 if (apply_rotation)
@@ -1937,7 +1938,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     //char msg[1024];
                     snprintf(msg, 1024, "Swapchain buffer[%u] size : %" PRIu64 " x %u\n", i, desc1.Width, desc1.Height);
                     OutputDebugStringA(msg);
-
+                    
                     device->CreateRenderTargetView(framebuffer[i], &rtvDesc, rtvHandle);
 
                     if (FAILED(hr))
