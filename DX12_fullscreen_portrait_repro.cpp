@@ -176,10 +176,12 @@ void dxgi_debug_pre_device_init()
 
 
     }
+#endif
 }
 
 void dxgi_debug_post_device_init()
 {
+#ifndef NDEBUG
     assert(device);
 
     // Debug
