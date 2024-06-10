@@ -114,6 +114,8 @@ ID3D11Device5* device = nullptr;
 ID3D11DeviceContext1* device_context_11_x = nullptr;
 IDXGISwapChain1* swapchain = nullptr;
 ID3D11RenderTargetView* render_target_view = nullptr;
+ID3D11RenderTargetView* msaa_render_target_view = nullptr;
+
 
 D3D_FEATURE_LEVEL feature_level;
 
@@ -123,6 +125,14 @@ BOOL DXGI_fullscreen = false;
 BOOL allowTearing = false;
 
 BOOL framechanged = false;
+
+
+#define MSAA_ENABLED 1
+
+#if MSAA_ENABLED
+ID3D11Texture2D* msaa_render_target;
+#endif
+
 
 
 ID3D11Buffer* shaderConstantBuffer_dims = NULL;
@@ -714,27 +724,78 @@ void InitD3D11(void)
 
 
 
-        // First obtain the framebuffer from the swapchain
+#if MSAA_ENABLED
 
-        ID3D11Texture2D* framebuffer;
-        result = swapchain->GetBuffer(0, IID_PPV_ARGS(&framebuffer));
-        assert(SUCCEEDED(result));
+        // Create MSAA texture
+        {
+            RECT rect;
+            GetClientRect(hWnd, &rect);
 
-        // Now we can create the render target image view (pointing at the framebufer images already)
+            D3D11_TEXTURE2D_DESC desc = {
+                .Width = (UINT) rect.right - rect.left,
+                .Height = (UINT) rect.bottom - rect.top,
+                .MipLevels = 1,
+                .ArraySize = 1,
+                .Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+                .SampleDesc = {
+                    .Count = 4,
+                    .Quality = 1
+                    },
+                .Usage = D3D11_USAGE_DEFAULT,
+                .BindFlags = D3D11_BIND_RENDER_TARGET,
+                .CPUAccessFlags = 0,
+                .MiscFlags = 0
+            };
 
-        D3D11_RENDER_TARGET_VIEW_DESC rtvDesc = {
-            .Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
-            .ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D,
-        };
 
-        result = device->CreateRenderTargetView(framebuffer, &rtvDesc, &render_target_view);
-        assert(SUCCEEDED(result));
 
-        D3D11_TEXTURE2D_DESC framebufferSurfaceDesc;
-        framebuffer->GetDesc(&framebufferSurfaceDesc);
-        
-        framebuffer->Release();
-        framebuffer = nullptr;
+            result = device->CreateTexture2D(&desc, nullptr, &msaa_render_target);
+
+            if (FAILED(result))
+            {
+                OutputDebugStringA("Failed to CreateTexture2D for MSAA texture\n");
+                exit(EXIT_FAILURE);
+            }
+
+
+            // Now we can create the render target image view (pointing at the framebufer images already)
+
+            D3D11_RENDER_TARGET_VIEW_DESC rtvDesc = {
+                .Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+                .ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2DMS,
+            };
+
+            result = device->CreateRenderTargetView(msaa_render_target, &rtvDesc, &msaa_render_target_view);
+            assert(SUCCEEDED(result));
+        }
+#endif
+
+        // Setup the swapchain render target view
+        {
+            // First obtain the framebuffer from the swapchain
+
+            ID3D11Texture2D* swapchain_framebuffer;
+
+            result = swapchain->GetBuffer(0, IID_PPV_ARGS(&swapchain_framebuffer));
+            assert(SUCCEEDED(result));
+
+            // Now we can create the render target image view (pointing at the framebufer images already)
+
+            D3D11_RENDER_TARGET_VIEW_DESC rtvDesc = {
+                .Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+                .ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D,
+            };
+
+            result = device->CreateRenderTargetView(swapchain_framebuffer, &rtvDesc, &render_target_view);
+            assert(SUCCEEDED(result));
+
+            D3D11_TEXTURE2D_DESC framebufferSurfaceDesc;
+            swapchain_framebuffer->GetDesc(&framebufferSurfaceDesc);
+
+            swapchain_framebuffer->Release();
+            swapchain_framebuffer = nullptr;
+        }
+
     }
 }
 
@@ -1004,11 +1065,19 @@ void InitShaders(void)
 
 void render(void)
 {
+
+#if MSAA_ENABLED
+    ID3D11RenderTargetView* target = msaa_render_target_view;
+#else
+    ID3D11RenderTargetView* target = render_target_view;
+#endif
+
     // Clear the backbuffer entirely
     {
         float clearColor1[4] = { 0.2f, 0.2f, 0.7f, 1.0f };
-        device_context_11_x->ClearRenderTargetView(render_target_view, &clearColor1[0]);
+        device_context_11_x->ClearRenderTargetView(target, &clearColor1[0]);
     }
+
 
 
 #if 0
@@ -1029,7 +1098,7 @@ void render(void)
 
 
     UINT num_views = 1;
-    device_context_11_x->OMSetRenderTargets(num_views, &render_target_view, nullptr);
+    device_context_11_x->OMSetRenderTargets(num_views, &target, nullptr);
     
     if (feature_level >= 1)
     {
@@ -1048,7 +1117,7 @@ void render(void)
                 .bottom = 300
             };
 
-            device_context_11_x->ClearView(render_target_view, clearColor, &rect, 1);
+            device_context_11_x->ClearView(target, clearColor, &rect, 1);
         }
 
 
@@ -1061,7 +1130,7 @@ void render(void)
             rect.bottom = rect.top + 500;
 
             // Pink from top
-            device_context_11_x->ClearView(render_target_view, clearColor, &rect, 1);
+            device_context_11_x->ClearView(target, clearColor, &rect, 1);
         }
 
 
@@ -1074,7 +1143,7 @@ void render(void)
             rect.bottom = rect.top + 500;
 
             // Green from bottom
-            device_context_11_x->ClearView(render_target_view, clearColor2, &rect, 1);
+            device_context_11_x->ClearView(target, clearColor2, &rect, 1);
         }
 
         // TODO: How to enable blending?
@@ -1089,7 +1158,7 @@ void render(void)
             rect.bottom = rect.top + 100;
 
             // Black from bottom right
-            device_context_11_x->ClearView(render_target_view, clearColor3, &rect, 1);
+            device_context_11_x->ClearView(target, clearColor3, &rect, 1);
         }
 
     }
@@ -1136,6 +1205,33 @@ void render(void)
 
     //device_context_11_x->Draw(15, 0);   // 5 tri's
     device_context_11_x->Draw(21, 0);   // 7 tri's
+
+
+
+    // Rendering is done, do the resolve
+
+#if MSAA_ENABLED
+
+    // Get the swapchain backbuffer
+    ID3D11Texture2D* pBuffer;
+    HRESULT hr = swapchain->GetBuffer(0, IID_PPV_ARGS(&pBuffer));
+
+    if (FAILED(hr))
+    {
+        OutputDebugStringA("Failed to retrieve swapchain buffer\n");
+        exit(EXIT_FAILURE);
+    }
+
+    device_context_11_x->ResolveSubresource(pBuffer, 0, msaa_render_target, 0, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB);
+
+    // Now set the actual swapchain render target
+    device_context_11_x->OMSetRenderTargets(1, &render_target_view, nullptr);
+
+    pBuffer->Release();
+#endif
+
+    // Do any UI rendering here to the non-MSAA swapchain buffer
+
 
 
     const UINT vsync = 0;
@@ -1308,16 +1404,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 
                 {
-                    ID3D11Texture2D* framebuffer;
-                    HRESULT result = swapchain->GetBuffer(0, IID_PPV_ARGS(&framebuffer));
+                    ID3D11Texture2D* swapchain_framebuffer;
+                    HRESULT result = swapchain->GetBuffer(0, IID_PPV_ARGS(&swapchain_framebuffer));
                     assert(SUCCEEDED(result));
                     D3D11_TEXTURE2D_DESC framebufferSurfaceDesc;
-                    framebuffer->GetDesc(&framebufferSurfaceDesc);
+                    swapchain_framebuffer->GetDesc(&framebufferSurfaceDesc);
                     char msg[1024];
-                    snprintf(msg, 1024, "Framebuffer surface dimensions : %d x %d\n", framebufferSurfaceDesc.Width, framebufferSurfaceDesc.Height);
+                    snprintf(msg, 1024, "Swapchain framebuffer surface dimensions : %d x %d\n", framebufferSurfaceDesc.Width, framebufferSurfaceDesc.Height);
                     OutputDebugStringA(msg);
-                    framebuffer->Release();
-                    framebuffer = nullptr;
+                    swapchain_framebuffer->Release();
+                    swapchain_framebuffer = nullptr;
                 }
 
             }
@@ -1393,6 +1489,32 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 .Format = DXGI_FORMAT_UNKNOWN
             };
 
+#if MSAA_ENABLED
+            // We need to resize the msaa_framebuffer also
+            {
+                msaa_render_target->Release();
+                msaa_render_target_view->Release();
+                
+                D3D11_TEXTURE2D_DESC desc = {
+                    .Width = window_width,
+                    .Height = window_height,
+                    .MipLevels = 1,
+                    .ArraySize = 1,
+                    .Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+                    .SampleDesc = {
+                        .Count = 4,
+                        .Quality = 1
+                        },
+                    .Usage = D3D11_USAGE_DEFAULT,
+                    .BindFlags = D3D11_BIND_RENDER_TARGET,
+                    .CPUAccessFlags = 0,
+                    .MiscFlags = 0
+                };
+
+                device->CreateTexture2D(&desc, nullptr, &msaa_render_target);
+            }
+#endif
+
             swapchain->ResizeTarget(&target_mode);
 
             device_context_11_x->OMSetRenderTargets(0, 0, 0);
@@ -1426,6 +1548,21 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 exit(EXIT_FAILURE);
             }
 
+
+#if MSAA_ENABLED
+            // Now we can create the render target image view (pointing at the framebufer images already)
+            {
+                D3D11_RENDER_TARGET_VIEW_DESC rtvDesc = {
+                    .Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+                    .ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2DMS,
+                };
+
+                assert(msaa_render_target);
+                HRESULT result = device->CreateRenderTargetView(msaa_render_target, &rtvDesc, &msaa_render_target_view);
+                assert(SUCCEEDED(result));
+            }
+#endif
+
             // Get buffer and create a render-target-view.
             ID3D11Texture2D* pBuffer;
             hr = swapchain->GetBuffer(0, IID_PPV_ARGS(&pBuffer));
@@ -1444,25 +1581,30 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             OutputDebugStringA(msg);
 
 
-
-            D3D11_RENDER_TARGET_VIEW_DESC rtvDesc = {
-                .Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
-                .ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D,
-            };
-
-            hr = device->CreateRenderTargetView(pBuffer, &rtvDesc, &render_target_view);
-
-            if (FAILED(hr))
             {
-                OutputDebugStringA("Failed to create render target view\n");
-                exit(EXIT_FAILURE);
-            }
+                D3D11_RENDER_TARGET_VIEW_DESC rtvDesc = {
+                    .Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+                    .ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D,
+                };
 
+                hr = device->CreateRenderTargetView(pBuffer, &rtvDesc, &render_target_view);
+
+                if (FAILED(hr))
+                {
+                    OutputDebugStringA("Failed to create render target view\n");
+                    exit(EXIT_FAILURE);
+                }
+            }
 
             pBuffer->Release();
             pBuffer = nullptr;
 
+
+#if MSAA_ENABLED
+            device_context_11_x->OMSetRenderTargets(1, &msaa_render_target_view, nullptr);
+#else
             device_context_11_x->OMSetRenderTargets(1, &render_target_view, nullptr);
+#endif
 
             // Set up the viewport.
             D3D11_VIEWPORT vp = {
@@ -1495,20 +1637,29 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     {
         // Cleanup
         device_context_11_x->DiscardView(render_target_view);
-        device_context_11_x->DiscardResource(shaderConstantBuffer_dims);
 
-        shaderConstantBuffer_dims->Release();
-        shaderConstantBuffer_dims = nullptr;
+#if MSAA_ENABLED
+        msaa_render_target_view->Release();
+        msaa_render_target->Release();
+        device_context_11_x->DiscardResource(msaa_render_target);
+#endif
+
+        //input_layout_ptr->Release();
+        render_target_view->Release();
+        render_target_view = nullptr;
+
 
         device_context_11_x->VSSetConstantBuffers(0, 0, nullptr);
         device_context_11_x->VSSetShader(nullptr, 0, 0);
         device_context_11_x->PSSetShader(nullptr, 0, 0);
         device_context_11_x->OMSetRenderTargets(0, nullptr, nullptr);
 
+        device_context_11_x->DiscardResource(shaderConstantBuffer_dims);
+        shaderConstantBuffer_dims->Release();
 
-        //input_layout_ptr->Release();
-        render_target_view->Release();
-        render_target_view = nullptr;
+        shaderConstantBuffer_dims = nullptr;
+
+
 
         swapchain->Release();
         swapchain = nullptr;
