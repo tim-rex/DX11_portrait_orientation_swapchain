@@ -221,7 +221,7 @@ void dxgi_debug_init()
 void InitD3D11(void)
 {
     HRESULT result;
-    IDXGIAdapter4 *dxgiAdapter = nullptr;
+    IDXGIAdapter* dxgiAdapter = nullptr;
 
     D3D_FEATURE_LEVEL feature_level_req[] = {
         D3D_FEATURE_LEVEL_11_1,
