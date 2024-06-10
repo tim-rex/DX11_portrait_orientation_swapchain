@@ -1562,9 +1562,13 @@ void render(void)
 
     // Now start rendering
     
+    // TODO: Is it correct / prefererd to reset the command allocator every frame ??
+
 #if MULTIPLE_COMMAND_ALLOCATORS
+    commandAllocator[frameIndex]->Reset();
     commandList->Reset(commandAllocator[frameIndex], pso);
 #else
+    commandAllocator[0].Reset();
     commandList->Reset(commandAllocator[0], pso);
 #endif
 
@@ -2107,6 +2111,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             // Set render targets
             commandList->OMSetRenderTargets(1, &rtvHandles[frameIndex], FALSE, nullptr);
+
+            // incorrect
+            //commandList->OMSetRenderTargets(numFrames, &rtvHandles[frameIndex], FALSE, nullptr);
 
             // Set up the viewport.
             D3D12_VIEWPORT vp = {
