@@ -491,6 +491,12 @@ void InitD3D12(void)
 
 
 
+    {
+        char msg[32];
+        snprintf(msg, 32, "Node count == %d", device->GetNodeCount());
+        OutputDebugStringA(msg);
+    }
+
     dxgi_debug_post_device_init();
 
 
@@ -995,6 +1001,7 @@ void InitD3D12(void)
 #else
     {
         HRESULT result = device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, commandAllocator, pipelineState, IID_PPV_ARGS(&commandList));
+        //HRESULT result = device->CreateCommandList(1, D3D12_COMMAND_LIST_TYPE_DIRECT, commandAllocator, pipelineState, IID_PPV_ARGS(&commandList));
 
         if (FAILED(result))
         {
@@ -1561,6 +1568,12 @@ void render(void)
     commandList->Reset(commandAllocator[0], pso);
 #endif
 
+    D3D12_RECT scissorRects[] = {
+    { 0, 0, (LONG) window_width, (LONG) window_height }
+    };
+    commandList->RSSetScissorRects(1, scissorRects);
+
+
     // Indicate that the back buffer will be used as a render target
 
     {
@@ -1602,11 +1615,6 @@ void render(void)
         commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     }
 
-    // Clear the backbuffer entirely
-    {
-        const float clearColor1[4] = { 0.2f, 0.2f, 0.7f, 1.0f };
-        commandList->ClearRenderTargetView(rtvHandles[frameIndex], clearColor1, 0, nullptr);
-    }
 
     // Set the viewport
     {
@@ -1631,6 +1639,17 @@ void render(void)
     {
         commandList->OMSetRenderTargets(1, &rtvHandles[frameIndex], FALSE, nullptr);
     }
+#endif
+
+
+
+    // Clear the backbuffer entirely
+    {
+        const float clearColor1[4] = { 0.2f, 0.2f, 0.7f, 1.0f };
+        commandList->ClearRenderTargetView(rtvHandles[frameIndex], clearColor1, 0, nullptr);
+    }
+
+
 
     // Draw something
     {
