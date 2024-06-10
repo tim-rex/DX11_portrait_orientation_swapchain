@@ -808,7 +808,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 DXGI_MODE_DESC target_mode = {
                     .Width = window_width,
                     .Height = window_height,
-                    .Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
+                    .Format = DXGI_FORMAT_B8G8R8A8_UNORM_SRGB
                 };
 
                 if (apply_rotation)
@@ -952,7 +952,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 
             D3D11_RENDER_TARGET_VIEW_DESC rtvDesc = {
-                .Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+                .Format = DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
                 .ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D,
             };
 
