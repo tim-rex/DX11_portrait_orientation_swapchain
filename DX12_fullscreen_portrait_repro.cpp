@@ -1639,7 +1639,6 @@ void render(void)
     {
         commandList->OMSetRenderTargets(1, &rtvHandles[frameIndex], FALSE, nullptr);
     }
-#endif
 
 
 
