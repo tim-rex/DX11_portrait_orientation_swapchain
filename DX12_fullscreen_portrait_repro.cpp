@@ -917,17 +917,7 @@ void InitD3D12(void)
     }
 
     // TODO: Consider AgilitySDK
-    // TODO: Consider enabling HLSL 202x
-    // TODO: Enable all warning flags for shaders
-    //       At a minimum:  -HV 202x -Wconversion -Wdouble-promotion -Whlsl-legacy-literal
-    // 
     // TODO: Consider using Visual Studio compile time for shaders
-
-
-    // TODO: Validate available feature level / shader model
-    // While Direct3D 12 can support older compiled shader blobs, shaders should be built using either Shader 
-    // Model 5.1 with the FXC/D3DCompile APIs, or using Shader Model 6 using the DXIL DXC compiler. 
-    // You should validate Shader Model 6 support with CheckFeatureSupport and D3D12_FEATURE_SHADER_MODEL.
 
 
 
@@ -1240,14 +1230,32 @@ void InitShaders(void)
         IDxcOperationResult* result;
         IDxcCompilerArgs* args = nullptr;
 
+        // Enable all warning flags for shaders
+        // At a minimum:  -HV 202x -Wconversion -Wdouble-promotion -Whlsl-legacy-literal
+
+
+        const wchar_t *arguments[] = {
+            L"-HV", L"202x",
+            L"-Weverything",
+            //L"-Werror"
+
+            L"-Wconversion",
+            L"-Wdouble-promotion",
+            L"-Whlsl-legacy-literal",
+
+            L"-all-resources-bound" // D3DCOMPILE_ALL_RESOURCES_BOUND
+
+        };
+
+
         hr = utils->BuildArguments(
             //nullptr,
             //L"shader.hlsl",
             LR"(C:\Users\Tim Kane\test.hlsl)",
             L"vs_main",
-            L"vs_6_5",
-            nullptr, // LPCWSTR * pArguments,
-            0,       // UINT32           argCount,
+            L"vs_6_1",
+            arguments, // LPCWSTR * pArguments,
+            ARRAY_COUNT(arguments),       // UINT32           argCount,
             nullptr, // const DxcDefine * pDefines,
             0,       // UINT32           defineCount,
             &args
@@ -1286,20 +1294,55 @@ void InitShaders(void)
 
             exit(EXIT_FAILURE);
         }
+        else
+        {
+            if (result)
+            {
+                IDxcBlobEncoding* errorsBlob;
+                hr = result->GetErrorBuffer(&errorsBlob);
+                if (SUCCEEDED(hr) && errorsBlob)
+                {
+                    char msg[2048];
+                    snprintf(msg, 2048, "VS Compilation suceeded with output::\n%hs\n", (const char*)errorsBlob->GetBufferPointer());
+                    OutputDebugStringA(msg);
+                    errorsBlob->Release();
+                }
+            }
+        }
 
         result->GetResult(&vs_code);
         result->Release();
     }
 
     {
-        IDxcOperationResult* result;
+        //IDxcOperationResult* result;
+        IDxcResult* result;
         IDxcCompilerArgs* args = nullptr;
+
+        const wchar_t* arguments[] = {
+            L"-HV", L"202x",
+            L"-Weverything",
+            //L"-Werror"
+
+            L"-Wconversion",
+            L"-Wdouble-promotion",
+            L"-Whlsl-legacy-literal",
+
+            L"-all-resources-bound" // D3DCOMPILE_ALL_RESOURCES_BOUND
+        };
+
+        /*
+        const DxcDefine constants[] = {
+            { L"D3DCOMPILE_ALL_RESOURCES_BOUND", L"1" }
+        };
+        */
+
 
         hr = utils->BuildArguments(L"shader.hlsl",
             L"ps_main",
-            L"ps_6_5",
-            nullptr, // LPCWSTR * pArguments,
-            0,       // UINT32           argCount,
+            L"ps_6_1",
+            arguments, // LPCWSTR * pArguments,
+            ARRAY_COUNT(arguments),       // UINT32           argCount,
             nullptr, // const DxcDefine * pDefines,
             0,       // UINT32           defineCount,
             &args
@@ -1337,6 +1380,27 @@ void InitShaders(void)
             }
 
             exit(EXIT_FAILURE);
+        }
+        else
+        {
+            if (result)
+            {
+                IDxcBlobWide* output = nullptr;
+                IDxcBlobWide* blobName = nullptr;
+
+                // TODO: Doesn't seem to do anything
+                result->GetOutput(result->PrimaryOutput(), IID_PPV_ARGS(&output), &blobName);
+                
+                IDxcBlobEncoding* errorsBlob;
+                hr = result->GetErrorBuffer(&errorsBlob);
+                if (SUCCEEDED(hr) && errorsBlob)
+                {
+                    char msg[2048];
+                    snprintf(msg, 2048, "VS Compilation suceeded with output::\n%hs\n", (const char*)errorsBlob->GetBufferPointer());
+                    OutputDebugStringA(msg);
+                    errorsBlob->Release();
+                }
+            }
         }
 
         result->GetResult(&ps_code);
