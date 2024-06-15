@@ -238,7 +238,7 @@ void dxgi_debug_post_device_init()
 
             info->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE);
             info->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, TRUE);
-            info->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, TRUE);
+            //info->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, TRUE);
             info->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_INFO, TRUE);
             info->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_MESSAGE, TRUE);
 
@@ -251,7 +251,7 @@ void dxgi_debug_post_device_init()
             info->SetBreakOnCategory(D3D12_MESSAGE_CATEGORY_STATE_SETTING, TRUE);
             info->SetBreakOnCategory(D3D12_MESSAGE_CATEGORY_STATE_GETTING, TRUE);
             info->SetBreakOnCategory(D3D12_MESSAGE_CATEGORY_RESOURCE_MANIPULATION, TRUE);
-            info->SetBreakOnCategory(D3D12_MESSAGE_CATEGORY_EXECUTION, TRUE);
+            //info->SetBreakOnCategory(D3D12_MESSAGE_CATEGORY_EXECUTION, TRUE);
             info->SetBreakOnCategory(D3D12_MESSAGE_CATEGORY_SHADER, TRUE);
 
             //info->AddMessage(D3D12_MESSAGE_CATEGORY_MISCELLANEOUS, D3D12_MESSAGE_SEVERITY_ERROR, D3D12_MESSAGE_ID_UNKNOWN, "TEST MISCELLANOUS ERROR");
@@ -269,7 +269,7 @@ void dxgi_debug_post_device_init()
 
             info->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_CORRUPTION, TRUE);
             info->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_ERROR, TRUE);
-            info->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_WARNING, TRUE);
+            info->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_WARNING, FALSE);
             info->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_INFO, TRUE);
             info->SetBreakOnSeverity(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_MESSAGE, TRUE);
 
@@ -282,7 +282,7 @@ void dxgi_debug_post_device_init()
             info->SetBreakOnCategory(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_CATEGORY_STATE_SETTING, TRUE);
             info->SetBreakOnCategory(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_CATEGORY_STATE_GETTING, TRUE);
             info->SetBreakOnCategory(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_CATEGORY_RESOURCE_MANIPULATION, TRUE);
-            info->SetBreakOnCategory(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_CATEGORY_EXECUTION, TRUE);
+            info->SetBreakOnCategory(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_CATEGORY_EXECUTION, FALSE);
             info->SetBreakOnCategory(DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_CATEGORY_SHADER, TRUE);
 
 
