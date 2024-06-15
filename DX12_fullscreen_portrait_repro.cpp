@@ -1,14 +1,11 @@
 // DX12_fullscreen_portrait_repro.cpp : Defines the entry point for the application.
 //
 
-
-// D3D11
+// D3D12
 #pragma comment( lib, "user32" )          // link against the win32 library
 #pragma comment( lib, "d3d12.lib" )
 #pragma comment( lib, "dxgi.lib" )        // directx graphics interface
-//#pragma comment( lib, "d3dcompiler.lib" ) // shader compiler
 #pragma comment( lib, "dxcompiler.lib" ) // DX12 shader compiler
-
 #pragma comment( lib, "dxguid.lib" )
 
 
@@ -29,9 +26,6 @@
 
 #define ARRAY_COUNT(array) \
     (sizeof(array) / (sizeof(array[0]) * (sizeof(array) != sizeof(void *) || sizeof(array[0]) <= sizeof(void *))))
-
-
-
 
 
 #define MAX_LOADSTRING 100
@@ -864,7 +858,6 @@ void InitD3D12(void)
             rtvHeap = nullptr;
 
             result = device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&rtvHeap));
-            rtvHeap->SetName(L"rtvDescriptorHeap");
 
             if (FAILED(result))
             {

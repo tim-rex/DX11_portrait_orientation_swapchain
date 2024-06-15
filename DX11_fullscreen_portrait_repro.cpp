@@ -1,7 +1,6 @@
 // DX11_fullscreen_portrait_repro.cpp : Defines the entry point for the application.
 //
 
-
 // D3D11
 #pragma comment( lib, "user32" )          // link against the win32 library
 #pragma comment( lib, "d3d11.lib" )       // direct3D library
@@ -16,15 +15,14 @@
 #include <d3d11.h>       // D3D interface
 #include <d3d11_1.h>     // D3D 11.1 extensions    TODO: Should we use 1_4 ? 1_5? 1_6?
 #include <d3d11_4.h>     // ID3D11Device5
-
 #include <dxgi1_6.h>     // CheckHardwareCompositionSupport
 
-#include <dxgidebug.h>   // DXGI_INFO_QUEUE
+#include "d3dcompiler.h"
 
+#include <dxgidebug.h>   // DXGI_INFO_QUEUE
 #include <assert.h>
 #include <vector>
 
-#include "d3dcompiler.h"
 
 #define ARRAY_COUNT(array) \
     (sizeof(array) / (sizeof(array[0]) * (sizeof(array) != sizeof(void *) || sizeof(array[0]) <= sizeof(void *))))
