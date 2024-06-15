@@ -126,6 +126,8 @@ BOOL framechanged = false;
 
 
 #define MSAA_ENABLED 1
+#define DRAW_LOTS_UNOPTIMISED 1
+
 
 #if MSAA_ENABLED
 ID3D11Texture2D* msaa_render_target;
@@ -1174,7 +1176,7 @@ void render(void)
 
 
 
-#if 0
+#if 1
     // Set the viewport
     {
         D3D11_VIEWPORT viewport = {
@@ -1183,10 +1185,14 @@ void render(void)
             (FLOAT)window_height,
             0.0f, 1.0f };   // DepthMin, DepthMax
 
+#if 0
         char msg[1024];
         snprintf(msg, 1024, "render time viewport dimensions %f x %f\n", viewport.Width, viewport.Height);
         OutputDebugStringA(msg);
+#endif
+
         device_context_11_x->RSSetViewports(1, &viewport);
+
     }
 #endif
 
@@ -1302,6 +1308,48 @@ void render(void)
     //device_context_11_x->Draw(15, 0);   // 5 tri's
     device_context_11_x->Draw(21, 0);   // 7 tri's
 
+#if DRAW_LOTS_UNOPTIMISED
+    // Now loop and create some artificial load
+    {
+        const int viewports_x = 1000;
+        const int viewports_y = 1000;
+
+        for (int i = 0; i < viewports_x; i++)
+        {
+            for (int j = 0; j < viewports_y; j++)
+            {
+                // Set a viewport for this block
+                D3D11_VIEWPORT viewport = {
+                    .TopLeftX = (float)window_width / viewports_x * i,
+                    .TopLeftY = (float)window_height / viewports_y * j,
+                    .Width = (float)window_width / viewports_x,
+                    .Height = (float)window_height / viewports_y
+                };
+
+                device_context_11_x->RSSetViewports(1, &viewport);
+                device_context_11_x->Draw(21, 0);   // 7 tri's
+            }
+        }
+
+        // And another layer, offset 50% in X and Y
+        for (int i = 0; i < viewports_x; i++)
+        {
+            for (int j = 0; j < viewports_y; j++)
+            {
+                // Set a viewport for this block
+                D3D11_VIEWPORT viewport = {
+                    .TopLeftX = ((float)window_width / viewports_x * i) + (((float)window_width / viewports_x) * 0.5f),
+                    .TopLeftY = ((float)window_height / viewports_y * j) + (((float)window_height / viewports_y) * 0.5f),
+                    .Width = (float)window_width / viewports_x,
+                    .Height = (float)window_height / viewports_y
+                };
+
+                device_context_11_x->RSSetViewports(1, &viewport);
+                device_context_11_x->Draw(21, 0);   // 7 tri's
+            }
+        }
+    }
+#endif
 
 
     // Rendering is done, do the resolve

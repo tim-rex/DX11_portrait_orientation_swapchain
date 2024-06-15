@@ -357,6 +357,9 @@ void dxgi_debug_post_device_init()
 #define BUNDLES_ENABLED 1
 #define ROOT_CONSTANTS_ENABLED 1
 
+#define DRAW_LOTS_UNOPTIMISED 1
+
+
 
 ID3D12CommandQueue* commandQueue = nullptr;
 ID3D12DescriptorHeap* rtvHeap = nullptr;
@@ -2199,6 +2202,55 @@ void render(void)
     PopulateCommandList(commandList);
 #endif
 #endif
+
+
+
+#if DRAW_LOTS_UNOPTIMISED
+    // We cannot use RSSetViewports in a bundle, for shame
+    // So we do it here
+
+    // Now loop and create some artificial load
+    {
+        const int viewports_x = 1000;
+        const int viewports_y = 1000;
+
+        for (int i = 0; i < viewports_x; i++)
+        {
+            for (int j = 0; j < viewports_y; j++)
+            {
+                // Set a viewport for this block
+                D3D12_VIEWPORT viewport = {
+                    .TopLeftX = (float)window_width / viewports_x * i,
+                    .TopLeftY = (float)window_height / viewports_y * j,
+                    .Width = (float)window_width / viewports_x,
+                    .Height = (float)window_height / viewports_y
+                };
+
+                commandList->RSSetViewports(1, &viewport);
+                commandList->DrawInstanced(21, 1, 0, 0);   // 7 tri's
+            }
+        }
+
+        // And another layer, offset 50% in X and Y
+        for (int i = 0; i < viewports_x; i++)
+        {
+            for (int j = 0; j < viewports_y; j++)
+            {
+                // Set a viewport for this block
+                D3D12_VIEWPORT viewport = {
+                    .TopLeftX = ((float)window_width / viewports_x * i) + (((float)window_width / viewports_x) * 0.5f),
+                    .TopLeftY = ((float)window_height / viewports_y * j) + (((float)window_height / viewports_y) * 0.5f),
+                    .Width = (float)window_width / viewports_x,
+                    .Height = (float)window_height / viewports_y
+                };
+
+                commandList->RSSetViewports(1, &viewport);
+                commandList->DrawInstanced(21, 0, 0, 0);   // 7 tri's
+            }
+        }
+    }
+#endif
+
 
     // Drawing complete
     
