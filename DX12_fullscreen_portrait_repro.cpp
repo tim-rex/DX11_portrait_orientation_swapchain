@@ -140,6 +140,7 @@ UINT window_width = 0;
 UINT window_height = 0;
 BOOL DXGI_fullscreen = false;
 BOOL allowTearing = false;
+D3D12_FEATURE_DATA_SHADER_MODEL shaderModel = {};
 
 BOOL framechanged = false;
 
@@ -316,7 +317,41 @@ void dxgi_debug_post_device_init()
 
     }
 #endif
+
+
+    shaderModel.HighestShaderModel = D3D_HIGHEST_SHADER_MODEL;
+
+    while (device->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &shaderModel, sizeof(shaderModel)) == E_INVALIDARG)
+    {
+        if (shaderModel.HighestShaderModel == D3D_SHADER_MODEL_5_1)
+        {
+            OutputDebugStringA("Failed to check D3D12_FEATURE_SHADER_MODEL from highest down to to 5_1");
+            exit(EXIT_FAILURE);
+        }
+        else if (shaderModel.HighestShaderModel == D3D_SHADER_MODEL_6_0)
+            shaderModel.HighestShaderModel = D3D_SHADER_MODEL_5_1;
+        else
+            shaderModel.HighestShaderModel = (D3D_SHADER_MODEL) (shaderModel.HighestShaderModel - 1);
+    }
+
+    {
+        char msg[1024];
+        snprintf(msg, 1024, "Highest available shader model : %x", shaderModel.HighestShaderModel);
+
+        if (shaderModel.HighestShaderModel >= D3D_SHADER_MODEL_6_1)
+            shaderModel.HighestShaderModel = D3D_SHADER_MODEL_6_1;
+        else
+        {
+            snprintf(msg, 1024, "Require shader model %x but only %x is available", D3D_SHADER_MODEL_6_1, shaderModel.HighestShaderModel);
+            OutputDebugStringA(msg);
+            exit(EXIT_FAILURE);
+        }
+
+    }
+   
+
 }
+
 
 
 ID3D12CommandQueue* commandQueue = nullptr;
