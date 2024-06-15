@@ -2104,6 +2104,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             WaitForGPU();
 
+                if (!window_width || !window_height)
+                    return 0;
+
             // Release the resources holding references to the swap chain (required by ResizeBufers)
             // and reset the frame fence values to the current fence value
 

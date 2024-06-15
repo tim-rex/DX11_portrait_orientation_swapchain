@@ -1577,6 +1577,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 window_height = tmp;
             }
           
+            if (!window_width || !window_height)
+                return 0;
 
 
             DXGI_MODE_DESC target_mode = {
