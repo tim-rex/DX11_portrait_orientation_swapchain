@@ -354,6 +354,8 @@ void dxgi_debug_post_device_init()
 
 
 #define MSAA_ENABLED 1
+#define BUNDLES_ENABLED 1
+#define ROOT_CONSTANTS_ENABLED 1
 
 
 ID3D12CommandQueue* commandQueue = nullptr;
@@ -400,6 +402,11 @@ struct VS_CONSTANT_BUFFER VsConstData_dims = {};
 
 
 ID3D12GraphicsCommandList* commandList = nullptr;
+
+#if BUNDLES_ENABLED
+ID3D12CommandAllocator* bundleAllocator = {};
+ID3D12GraphicsCommandList* commandListBundle = nullptr;
+#endif
 
 ID3D12RootSignature* rootSig = nullptr;
 ID3D12PipelineState* pso = nullptr;
@@ -1222,6 +1229,20 @@ void InitD3D12(void)
         commandAllocator[i]->SetName(name);
     }
 
+#if BUNDLES_ENABLED
+    {
+        HRESULT result = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_BUNDLE, IID_PPV_ARGS(&bundleAllocator));
+
+        if (FAILED(result))
+        {
+            OutputDebugStringA("Failed to CreateCommandAllocator for bundleAllocator\n");
+            exit(EXIT_FAILURE);
+        }
+
+        bundleAllocator->SetName(L"bundle allocator");
+
+    }
+#endif
 
     // Pipeline state is setup later (during shader setup)
 
@@ -1241,6 +1262,23 @@ void InitD3D12(void)
 
         // This command list is created in a closed state by default
     }
+
+#if BUNDLES_ENABLED
+    {
+        HRESULT result = device->CreateCommandList1(0, D3D12_COMMAND_LIST_TYPE_BUNDLE, D3D12_COMMAND_LIST_FLAG_NONE, IID_PPV_ARGS(&commandListBundle));
+
+        if (FAILED(result))
+        {
+            OutputDebugStringA("Failed to CreateCommandList1 Bundle\n");
+            exit(EXIT_FAILURE);
+        }
+        commandList->SetName(L"commandListBundle");
+
+        // This command list is created in a closed state by default
+    }
+#endif
+
+
 #else
     {
         HRESULT result = device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, commandAllocator, pipelineState, IID_PPV_ARGS(&commandList));
@@ -2100,7 +2138,15 @@ void render(void)
         ID3D12DescriptorHeap* ppHeaps[] = { cbvHeap };
         commandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
     }
+
+
+#if 1
+    // Populate the commandlist (or, if we're using bundles - use the bundle we made on init)
+#if BUNDLES_ENABLED
+    commandList->ExecuteBundle(commandListBundle);
+#else
     PopulateCommandList(commandList);
+#endif
 #endif
 
     // Drawing complete
@@ -2244,6 +2290,15 @@ void PopulateCommandList(ID3D12GraphicsCommandList *commandListOrBundle)
     }
 }
 
+void InitBundle()
+{
+#if BUNDLES_ENABLED
+    commandListBundle->Reset(bundleAllocator, pso);
+    PopulateCommandList(commandListBundle);
+    commandListBundle->Close();
+#endif
+}
+
 DWORD windowStyle = WS_OVERLAPPEDWINDOW;
 
 BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
@@ -2260,6 +2315,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
    InitD3D12();
    InitShaders();
+   InitBundle();
 
    ShowWindow(hWnd, nCmdShow);
    UpdateWindow(hWnd);
