@@ -109,7 +109,6 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
 
 HWND hWnd;
 
-const UINT numFrames = 2;
 
 // Ref: https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nn-d3d12-id3d12device
 // Note: This interface was introduced in Windows 10. Applications targetting Windows 10 should use this interface instead of later versions.
@@ -354,12 +353,25 @@ void dxgi_debug_post_device_init()
 
 
 
+#define MSAA_ENABLED 1
+
+
 ID3D12CommandQueue* commandQueue = nullptr;
 ID3D12DescriptorHeap* rtvHeap = nullptr;
 ID3D12DescriptorHeap* cbvHeap = nullptr;
 
+#if MSAA_ENABLED
+const UINT numFrames = 4;
+#else
+const UINT numFrames = 1;
+#endif
+
 ID3D12Resource2* framebuffer[numFrames] = {};
 
+#if MSAA_ENABLED
+ID3D12DescriptorHeap* rtvHeap_MSAA = nullptr;
+ID3D12Resource2* framebuffer_MSAA[numFrames] = {};
+#endif
 
 // We need a command allocater + command list
 
@@ -372,12 +384,25 @@ ID3D12CommandAllocator* commandAllocator[1] = {};
 #endif
 
 
+
+// Define the constant data used to communicate with shaders.
+struct VS_CONSTANT_BUFFER
+{
+    float width;
+    float height;
+    float time;
+    float padding[61]; // Padding so the constant buffer is 256-byte aligned.
+} VS_CONSTANT_BUFFER;
+
+static_assert((sizeof(VS_CONSTANT_BUFFER) % 256) == 0, "Constant Buffer size must be 256-byte aligned");
+
+struct VS_CONSTANT_BUFFER VsConstData_dims = {};
+
+
 ID3D12GraphicsCommandList* commandList = nullptr;
 
 ID3D12RootSignature* rootSig = nullptr;
 ID3D12PipelineState* pso = nullptr;
-
-
 
 ID3D12Fence1* fence = nullptr;
 UINT64 fenceValues[numFrames];
@@ -391,6 +416,38 @@ D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {
     .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D,
 };
 
+#if MSAA_ENABLED
+
+D3D12_CPU_DESCRIPTOR_HANDLE rtvHandles_MSAA[numFrames];
+
+D3D12_RENDER_TARGET_VIEW_DESC rtvDesc_MSAA = {
+    .Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+    .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DMS,
+};
+
+constexpr unsigned floorlog2(unsigned x)
+{
+    return x == 1 ? 0 : 1 + floorlog2(x >> 1);
+}
+
+constexpr unsigned ceillog2(unsigned x)
+{
+    return x == 1 ? 0 : floorlog2(x - 1) + 1;
+}
+
+const UINT MAX_SAMPLE_COUNT = 32;   // Taken from D3D11_MAX_MULTISAMPLE_SAMPLE_COUNT. No way to query this in D3D12
+
+constexpr int availableMultisampleLevels = ceillog2(MAX_SAMPLE_COUNT) + 1;
+
+UINT sampleCountQuality[availableMultisampleLevels];
+UINT MSAA_Count = 4;
+UINT MSAA_Quality = 0;
+
+#endif
+
+
+
+
 D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {
     .Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
     .NumDescriptors = numFrames,
@@ -398,6 +455,16 @@ D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {
     .NodeMask = 0
 };
 
+#if MSAA_ENABLED
+// TODO: We could just use the same rtvHeapDesc (and increase NumDescriptors appropriately)
+
+D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc_MSAA = {
+    .Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
+    .NumDescriptors = numFrames,
+    .Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
+    .NodeMask = 0
+};
+#endif
 
 D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc = {
     .Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
@@ -432,6 +499,12 @@ void InitD3D12(void)
 
     // Usage of CheckFeatureSupport is poorly documented, but this examples shows the way
     // Ref: https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/variable-refresh-rate-displays
+
+    // Validate available feature level / shader model
+    // While Direct3D 12 can support older compiled shader blobs, shaders should be built using either Shader 
+    // Model 5.1 with the FXC/D3DCompile APIs, or using Shader Model 6 using the DXIL DXC compiler. 
+    // You should validate Shader Model 6 support with CheckFeatureSupport and D3D12_FEATURE_SHADER_MODEL.
+
 
     pFactory->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &allowTearing, sizeof(allowTearing));
 
@@ -702,6 +775,62 @@ void InitD3D12(void)
         //assert(best_fullscreen_mode);
     }
 
+    // Determine available multisample quality levels
+    {
+        D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS levels = {
+            .Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+            .SampleCount = 32,
+            .Flags = D3D12_MULTISAMPLE_QUALITY_LEVELS_FLAG_NONE
+        };
+
+
+#if MSAA_ENABLED
+        for (UINT sampleCount = MAX_SAMPLE_COUNT, i = availableMultisampleLevels - 1;
+            sampleCount > 0 && i >= 0;
+            sampleCount = sampleCount >> 1, i--)
+        {
+            levels.SampleCount = sampleCount;
+
+            result = device->CheckFeatureSupport(D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS, &levels, sizeof(levels));
+
+            if (FAILED(result))
+            {
+                OutputDebugStringA("Failed to query D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS\n");
+                exit(EXIT_FAILURE);
+            }
+
+            // The valid range is between zero and one less than the level returned by CheckMultisampleQualityLevels
+            sampleCountQuality[i] = levels.NumQualityLevels - 1;
+
+            // If quality level is zero, it's unsupported. This will underflow to UINT_MAX            
+
+            char msg[1024];
+            snprintf(msg, 1024, "Multisample Count %d supports Max Quality %d\n", sampleCount, sampleCountQuality[i]);
+            OutputDebugStringA(msg);
+        }
+
+        //MSAA_Count = 4;
+        MSAA_Quality = sampleCountQuality[ceillog2(MSAA_Count)];
+
+
+        // Zero - 1 (UINT_MAX) means not supported for this MSAA Count
+        // The default sampler mode with no anti-aliasing has Count == 1 && Quality == 0
+        assert(MSAA_Quality != UINT_MAX);
+
+        // If MSAA_Count == 1, we need to disable MSAA entirely
+        assert(MSAA_Count > 1);
+
+        {
+            char msg[1024];
+            snprintf(msg, 1024, "Using Multisample Count %d : Quality %d\n", MSAA_Count, MSAA_Quality);
+            OutputDebugStringA(msg);
+
+        }
+#endif
+
+
+    }
+
     // Command queue creation
     {
         commandQueue = nullptr;
@@ -870,6 +999,120 @@ void InitD3D12(void)
 #endif
 
 
+#if MSAA_ENABLED
+        // Create the MSAA buffers
+        {
+            // We need a descriptor heap for the MSAA target view
+            {
+                rtvHeap_MSAA = nullptr;
+
+                result = device->CreateDescriptorHeap(&rtvHeapDesc_MSAA, IID_PPV_ARGS(&rtvHeap_MSAA));
+
+                if (FAILED(result))
+                {
+                    OutputDebugStringA("Failed to CreateDescriptorHeap\n");
+                    exit(EXIT_FAILURE);
+                }
+
+                rtvHeap_MSAA->SetName(L"rtvHeap_MSAA");
+            }
+
+            // Create the MSAA buffers
+            {
+#if 0
+                D3D12_HEAP_PROPERTIES heapProperties = {
+                    .Type = D3D12_HEAP_TYPE_CUSTOM,
+                    .CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_NOT_AVAILABLE,
+                    .MemoryPoolPreference = D3D12_MEMORY_POOL_L1,
+                    .CreationNodeMask = 0,
+                    .VisibleNodeMask = 0
+                };
+
+                D3D12_HEAP_FLAGS heapFlags = D3D12_HEAP_FLAG_SHARED;
+                //D3D12_HEAP_FLAGS heapFlags = D3D12_HEAP_FLAG_NONE;
+                //D3D12_HEAP_FLAGS heapFlags = D3D12_HEAP_FLAG_SHARED | D3D12_HEAP_FLAG_ALLOW_ALL_BUFFERS_AND_TEXTURES;
+
+#else
+                D3D12_HEAP_PROPERTIES heapProperties = {
+                    .Type = D3D12_HEAP_TYPE_DEFAULT,
+                };
+
+                D3D12_HEAP_FLAGS heapFlags = D3D12_HEAP_FLAG_NONE;
+#endif
+
+
+
+                RECT rect;
+                GetClientRect(hWnd, &rect);
+                UINT64 width = rect.right - rect.left;
+                UINT height = rect.bottom - rect.top;
+
+
+                D3D12_RESOURCE_DESC resourceDesc = {
+                    .Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+                    .Alignment = 0,
+                    .Width = width,
+                    .Height = height,
+                    .DepthOrArraySize = 1,
+                    .MipLevels = 1,
+                    .Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+                    .SampleDesc = {
+                        .Count = MSAA_Count,
+                        .Quality = MSAA_Quality
+                     },
+                    .Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN,
+                    .Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET // | D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL,            
+                };
+
+                D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_RENDER_TARGET;
+                //D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_PRESENT;
+
+                D3D12_CLEAR_VALUE clearValue = {
+                    .Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+                    .Color = { 0.2f, 0.2f, 0.7f, 1.0f }
+                };
+
+                for (uint8_t i = 0; i < numFrames; i++)
+                {
+
+                    device->CreateCommittedResource1(
+                        &heapProperties,
+                        heapFlags,
+                        &resourceDesc,
+                        state,
+                        &clearValue,
+                        nullptr,
+                        IID_PPV_ARGS(&framebuffer_MSAA[i]));
+
+                    wchar_t name[32];
+                    wsprintf(name, L"MSAA buffer %d of %d", i, numFrames);
+                    framebuffer_MSAA[i]->SetName(name);
+                }
+            }
+
+            // Create render target views for each MSAA image buffer
+            {
+                D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle_MSAA = rtvHeap_MSAA->GetCPUDescriptorHandleForHeapStart();
+                const UINT incrementSize = device->GetDescriptorHandleIncrementSize(rtvHeapDesc_MSAA.Type);
+
+                // Create a renderTargetView for each swapchain frame
+                for (uint8_t i = 0; i < numFrames; i++)
+                {
+                    device->CreateRenderTargetView(framebuffer_MSAA[i], &rtvDesc_MSAA, rtvHandle_MSAA);
+
+                    rtvHandles_MSAA[i] = rtvHandle_MSAA;
+                    rtvHandle_MSAA.ptr += incrementSize;
+                }
+
+                D3D12_RESOURCE_DESC desc = framebuffer_MSAA[frameIndex]->GetDesc();
+                D3D12_RESOURCE_DESC1 desc1 = framebuffer_MSAA[frameIndex]->GetDesc1();
+
+                // We don't release here, we'll release when (and if) we need to resize the framebuffer_MSAA
+                //framebuffer_MSAA->Release();
+            }
+        }
+#endif
+
         // Now we can create the render target image view (pointing at the framebufer images already)
 
         // We need a descriptor heap for the render target view
@@ -963,11 +1206,7 @@ void InitD3D12(void)
 
 
     // Create a command allocator
-#if MULTIPLE_COMMAND_ALLOCATORS
     for (int i=0; i < numFrames; i++)
-#else
-    for (int i = 0; i < 1; i++)
-#endif
     {
         HRESULT result = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&commandAllocator[i]));
 
@@ -1546,8 +1785,14 @@ void InitShaders(void)
         .NumRenderTargets = 1,
         .RTVFormats = { DXGI_FORMAT_R8G8B8A8_UNORM_SRGB },
         .SampleDesc = {
+#if MSAA_ENABLED
+            .Count = MSAA_Count,
+            .Quality = MSAA_Quality,
+#else
             .Count = 1,
             .Quality = 0
+#endif
+            
             },
         .Flags = D3D12_PIPELINE_STATE_FLAG_NONE
     };
@@ -1661,9 +1906,21 @@ float time_lerp(void)
 }
 
 
+void PopulateCommandList(ID3D12GraphicsCommandList* commandList);
+
 void render(void)
 {
     UINT frameIndex = swapchain4->GetCurrentBackBufferIndex();
+
+
+    D3D12_CPU_DESCRIPTOR_HANDLE *rtvHandleForFrame = &rtvHandles[frameIndex];
+
+#if MSAA_ENABLED
+    D3D12_CPU_DESCRIPTOR_HANDLE* rtvHandleForFrame_MSAA = &rtvHandles_MSAA[frameIndex];
+    D3D12_CPU_DESCRIPTOR_HANDLE* rtvTarget = rtvHandleForFrame_MSAA;
+#else
+    D3D12_CPU_DESCRIPTOR_HANDLE* rtvTarget = rtvHandleForFrame;
+#endif
 
     // Now start rendering
     
@@ -1677,14 +1934,50 @@ void render(void)
     commandList->Reset(commandAllocator[0], pso);
 #endif
 
-    D3D12_RECT scissorRects[] = {
-    { 0, 0, (LONG) window_width, (LONG) window_height }
-    };
-    commandList->RSSetScissorRects(1, scissorRects);
+
+    // Set the viewport
+    {
+        D3D12_VIEWPORT viewport = {
+            0.0f, 0.0f,   // X, Y
+            (FLOAT)window_width,
+            (FLOAT)window_height,
+            0.0f, 1.0f  // DepthMin, DepthMax
+        };
+        D3D12_RECT scissorRect = { 0, 0, (LONG)window_width, (LONG)window_height };
+
+        /*
+        char msg[1024];
+        snprintf(msg, 1024, "render time viewport dimensions %f x %f\n", viewport.Width, viewport.Height);
+        OutputDebugStringA(msg);
+        */
+        commandList->RSSetViewports(1, &viewport);
+        commandList->RSSetScissorRects(1, &scissorRect);
+    }
 
 
+
+#if MSAA_ENABLED
+
+    // Indicate that the MSAA buffer will transition to a RENDER_TARGET state
+    {
+        // Create a resource barrier
+        D3D12_RESOURCE_BARRIER resourceBarrierTransitionTargetPresent = {
+            .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+            .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+            .Transition = {
+                .pResource = (ID3D12Resource*)framebuffer_MSAA[frameIndex],
+                .Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                .StateBefore = D3D12_RESOURCE_STATE_RESOLVE_SOURCE,
+                .StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET
+            }
+        };
+
+        commandList->ResourceBarrier(1, &resourceBarrierTransitionTargetPresent);
+    }
+
+
+#else
     // Indicate that the back buffer will be used as a render target
-
     {
         // Create a resource barrier
         D3D12_RESOURCE_BARRIER resourceBarrierTransitionPresentTarget = {
@@ -1700,72 +1993,29 @@ void render(void)
 
         commandList->ResourceBarrier(1, &resourceBarrierTransitionPresentTarget);
     }
-    
-    // Set the root signature before doing anything
+#endif
 
-    commandList->SetGraphicsRootSignature(rootSig);
-
-    // Set descriptor heaps
-    {
-        ID3D12DescriptorHeap* ppHeaps[] = { cbvHeap };
-        commandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
-
-        // Already defined by root signature
-        //commandList->SetGraphicsRootDescriptorTable(0, cbvHeap->GetGPUDescriptorHandleForHeapStart());
-
-        commandList->SetGraphicsRootConstantBufferView(0, constantBufferView.BufferLocation);
-    }
-
-
-    {
-        // Ref: https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nn-d3d12-id3d12pipelinestate
-        
-        commandList->SetPipelineState(pso);
-        commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    }
-
-
-    // Set the viewport
-    {
-        D3D12_VIEWPORT viewport = {
-            0.0f, 0.0f,   // X, Y
-            (FLOAT)window_width,
-            (FLOAT)window_height,
-            0.0f, 1.0f  // DepthMin, DepthMax
-        };
-        D3D12_RECT scissorRect = { 0, 0, (LONG) window_width, (LONG) window_height };
-
-        /*
-        char msg[1024];
-        snprintf(msg, 1024, "render time viewport dimensions %f x %f\n", viewport.Width, viewport.Height);
-        OutputDebugStringA(msg);
-        */
-        commandList->RSSetViewports(1, &viewport);
-        commandList->RSSetScissorRects(1, &scissorRect);
-    }
 
     // Set render targets
     {
-        commandList->OMSetRenderTargets(1, &rtvHandles[frameIndex], FALSE, nullptr);
+        commandList->OMSetRenderTargets(1, rtvTarget, FALSE, nullptr);
     }
-
-
 
     // Clear the backbuffer entirely
+    if (1)
     {
         const float clearColor1[4] = { 0.2f, 0.2f, 0.7f, 1.0f };
-        commandList->ClearRenderTargetView(rtvHandles[frameIndex], clearColor1, 0, nullptr);
+        commandList->ClearRenderTargetView(*rtvTarget, clearColor1, 0, nullptr);
     }
 
-
-
     // Draw something
+    if (1)
     {
         // Clear a 200x200 pixel square at position 100x100
         {
             const FLOAT clearColor[4] = { 0.7f, 0.7f, 1.0f, 1.0f };
 
-            // D3D11 appears to be top to bottom
+            // D3D12 appears to be top to bottom
             //RECT = {x1, y1, x2, y2}
             const D3D12_RECT rect = {
                 .left = 100,
@@ -1774,7 +2024,7 @@ void render(void)
                 .bottom = 300
             };
 
-            commandList->ClearRenderTargetView(rtvHandles[frameIndex], clearColor, 1, &rect);
+            commandList->ClearRenderTargetView(*rtvTarget, clearColor, 1, &rect);
         }
 
         {
@@ -1786,7 +2036,7 @@ void render(void)
             rect.bottom = rect.top + 500;
 
             // Pink from top
-            commandList->ClearRenderTargetView(rtvHandles[frameIndex], clearColor, 1, &rect);
+            commandList->ClearRenderTargetView(*rtvTarget, clearColor, 1, &rect);
         }
 
         {
@@ -1798,7 +2048,7 @@ void render(void)
             rect.bottom = rect.top + 500;
 
             // Green from bottom
-            commandList->ClearRenderTargetView(rtvHandles[frameIndex], clearColor2, 1, &rect);
+            commandList->ClearRenderTargetView(*rtvTarget, clearColor2, 1, &rect);
         }
 
         // TODO: How to enable blending?
@@ -1813,28 +2063,115 @@ void render(void)
             rect.bottom = rect.top + 100;
 
             // Black from bottom right
-            commandList->ClearRenderTargetView(rtvHandles[frameIndex], clearColor3, 1, &rect);
+            commandList->ClearRenderTargetView(*rtvTarget, clearColor3, 1, &rect);
         }
     }
 
-    // Draw something, we don't use vertex buffers - all the magic happens in the vertex shader
+
+
+    //if (framechanged)
+    if (1)
     {
-        // Update constant data (frame dimensions
+        // Update constant data (frame dimensions, time)
+        VsConstData_dims.width = (float)window_width;
+        VsConstData_dims.height = (float)window_height;
+        VsConstData_dims.time = time_lerp();
+        framechanged = false;
+    }
 
-        if (framechanged)
-        {
-            VsConstData_dims.width = (float)window_width;
-            VsConstData_dims.height = (float)window_height;
-            framechanged = false;
-
-            assert(persistentlyMappedConstantBuffer);
-            memcpy(persistentlyMappedConstantBuffer, &VsConstData_dims, sizeof(VsConstData_dims));
-        }
 
         commandList->DrawInstanced(21, 1, 0, 0);
+    //if (framechanged)
+    if (1)
+    {
+        assert(persistentlyMappedConstantBuffer);
+        memcpy(persistentlyMappedConstantBuffer, &VsConstData_dims, sizeof(VsConstData_dims));
     }
 
+    // Set descriptor heaps
+    {
+        // SetDescriptorHeaps can be called on a bundle, but the bundle descriptor heaps must match the calling 
+        // command list descriptor heap.
+        // For more information on bundle restrictions, refer to Creating and Recording Command Lists and Bundles.\
+            //
+            // So.. What's the point?!  Genuine question
+
+
+        ID3D12DescriptorHeap* ppHeaps[] = { cbvHeap };
+        commandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
+    }
+    PopulateCommandList(commandList);
+#endif
+
     // Drawing complete
+    
+    // Perform the resolve
+#if MSAA_ENABLED
+
+    // Transition MSAA buffer from TARGET to SOURCE
+
+
+    // Indicate that the MSAA buffer will be used as a SOURCE for the resolve operation
+    // Indicate that the swapchain back buffer will transition to a RESOLVE_DEST state
+    {
+        // Create a resource barrier
+        D3D12_RESOURCE_BARRIER resourceBarrierTransitionMSAATargetToSource_Framebuffer_PresentToResolve[] = {
+
+            // MSAA Target to Source
+            {
+                .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+                .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+                .Transition = {
+                    .pResource = (ID3D12Resource*)framebuffer_MSAA[frameIndex],
+                    .Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                    .StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET,
+                    .StateAfter = D3D12_RESOURCE_STATE_RESOLVE_SOURCE
+                }
+            },
+            // Swapchain buffer Present to ResolveDest
+            {
+                .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+                .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+                .Transition = {
+                    .pResource = (ID3D12Resource*)framebuffer[frameIndex],
+                    .Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                    .StateBefore = D3D12_RESOURCE_STATE_PRESENT,
+                    .StateAfter = D3D12_RESOURCE_STATE_RESOLVE_DEST
+                }
+            }
+        };
+
+        commandList->ResourceBarrier(2, &resourceBarrierTransitionMSAATargetToSource_Framebuffer_PresentToResolve[0]);
+    }
+
+   
+
+    commandList->ResolveSubresource(framebuffer[frameIndex], 0, framebuffer_MSAA[frameIndex], 0, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB);
+
+    // Now set the actual swapchain render target
+    commandList->OMSetRenderTargets(1, rtvHandleForFrame, FALSE, nullptr);
+
+
+    // Indicate that the back buffer will be used to present
+    {
+        // Create a resource barrier
+        D3D12_RESOURCE_BARRIER resourceBarrierTransitionTargetPresent = {
+            .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+            .Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE,
+            .Transition = {
+                .pResource = (ID3D12Resource*)framebuffer[frameIndex],
+                .Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                .StateBefore = D3D12_RESOURCE_STATE_RESOLVE_DEST,
+                .StateAfter = D3D12_RESOURCE_STATE_PRESENT
+            }
+        };
+
+        commandList->ResourceBarrier(1, &resourceBarrierTransitionTargetPresent);
+    }
+
+
+#else
+    
     // Indicate that the back buffer will be used to present
     {
         // Create a resource barrier
@@ -1851,6 +2188,9 @@ void render(void)
 
         commandList->ResourceBarrier(1, &resourceBarrierTransitionTargetPresent);
     }
+
+#endif
+
 
     commandList->Close();
 
@@ -1877,6 +2217,32 @@ void render(void)
     WaitForGPU();
 }
 
+void PopulateCommandList(ID3D12GraphicsCommandList *commandListOrBundle)
+{
+    // Bundleable commands
+    {
+
+
+
+        {
+            // Ref: https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nn-d3d12-id3d12pipelinestate
+
+            static bool pso_changed = true;
+            if (pso_changed)
+            {
+                commandListOrBundle->SetPipelineState(pso);
+                pso_changed = false;
+            }
+
+            commandListOrBundle->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        }
+
+        // Draw something, we don't use vertex buffers - all the magic happens in the vertex shader
+        {
+            commandListOrBundle->DrawInstanced(21, 1, 0, 0);
+        }
+    }
+}
 
 DWORD windowStyle = WS_OVERLAPPEDWINDOW;
 
@@ -2129,9 +2495,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 .Format = DXGI_FORMAT_UNKNOWN
             };
 
-            swapchain4->ResizeTarget(&target_mode);
 
             UINT frameIndex = swapchain4->GetCurrentBackBufferIndex();
+
+            swapchain4->ResizeTarget(&target_mode);
+
 
             // Reset the command list
             //flushGpu();
@@ -2139,8 +2507,97 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             WaitForGPU();
 
+
+#if MSAA_ENABLED
+            // Resize MSAA buffers
+            {
+
                 if (!window_width || !window_height)
                     return 0;
+
+                // Release the existing MSAA resources
+
+                for (UINT i = 0; i < numFrames; i++)
+                {
+                    framebuffer_MSAA[i]->Release();
+                    framebuffer_MSAA[i] = nullptr;
+                }
+
+
+
+                D3D12_HEAP_PROPERTIES heapProperties = {
+                    .Type = D3D12_HEAP_TYPE_DEFAULT,
+                };
+
+                D3D12_HEAP_FLAGS heapFlags = D3D12_HEAP_FLAG_NONE;
+
+                D3D12_RESOURCE_DESC resourceDesc = {
+                    .Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+                    .Alignment = 0,
+                    .Width = window_width,
+                    .Height = window_height,
+                    .DepthOrArraySize = 1,
+                    .MipLevels = 1,
+                    .Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+                    .SampleDesc = {
+                        .Count = MSAA_Count,
+                        .Quality = MSAA_Quality
+                     },
+                    .Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN,
+                    .Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET // | D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL,            
+                };
+
+                D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_RESOLVE_SOURCE;
+                //D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_PRESENT;
+
+                D3D12_CLEAR_VALUE clearValue = {
+                    .Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+                    .Color = { 0.2f, 0.2f, 0.7f, 1.0f }
+                };
+
+                for (uint8_t i = 0; i < numFrames; i++)
+                {
+
+                    device->CreateCommittedResource1(
+                        &heapProperties,
+                        heapFlags,
+                        &resourceDesc,
+                        state,
+                        &clearValue,
+                        nullptr,
+                        IID_PPV_ARGS(&framebuffer_MSAA[i]));
+
+                    wchar_t name[32];
+                    wsprintf(name, L"MSAA buffer %d of %d", i, numFrames);
+                    framebuffer_MSAA[i]->SetName(name);
+                }
+
+
+                // Create render target views for each MSAA image buffer
+                {
+                    D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle_MSAA = rtvHeap_MSAA->GetCPUDescriptorHandleForHeapStart();
+                    const UINT incrementSize = device->GetDescriptorHandleIncrementSize(rtvHeapDesc_MSAA.Type);
+
+                    // Create a renderTargetView for each swapchain frame
+                    for (uint8_t i = 0; i < numFrames; i++)
+                    {
+                        device->CreateRenderTargetView(framebuffer_MSAA[i], &rtvDesc_MSAA, rtvHandle_MSAA);
+
+                        rtvHandles_MSAA[i] = rtvHandle_MSAA;
+                        rtvHandle_MSAA.ptr += incrementSize;
+                    }
+
+                    D3D12_RESOURCE_DESC desc = framebuffer_MSAA[frameIndex]->GetDesc();
+                    D3D12_RESOURCE_DESC1 desc1 = framebuffer_MSAA[frameIndex]->GetDesc1();
+
+                    // We don't release here, we'll release when (and if) we need to resize the framebuffer_MSAA
+                    //framebuffer_MSAA->Release();
+                }
+
+
+            }
+#endif
+
 
             // Release the resources holding references to the swap chain (required by ResizeBufers)
             // and reset the frame fence values to the current fence value
@@ -2218,7 +2675,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             }
 
             // Set render targets
+#if MSAA_ENABLED
+            commandList->OMSetRenderTargets(1, &rtvHandles_MSAA[frameIndex], FALSE, nullptr);
+#else
             commandList->OMSetRenderTargets(1, &rtvHandles[frameIndex], FALSE, nullptr);
+#endif
 
             // incorrect
             //commandList->OMSetRenderTargets(numFrames, &rtvHandles[frameIndex], FALSE, nullptr);
@@ -2267,6 +2728,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             // Cleanup
 
             WaitForGPU();
+
+#if MSAA_ENABLED
+            assert(false && "Cleanup after MSAA");
+#endif
+
 
             for (UINT i = 0; i < numFrames; i++)
             {
