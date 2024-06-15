@@ -145,20 +145,6 @@ BOOL framechanged = false;
 
 
 
-// Define the constant data used to communicate with shaders.
-struct VS_CONSTANT_BUFFER
-{
-    float width;
-    float height;
-    float padding[62]; // Padding so the constant buffer is 256-byte aligned.
-} VS_CONSTANT_BUFFER;
-
-static_assert((sizeof(VS_CONSTANT_BUFFER) % 256) == 0, "Constant Buffer size must be 256-byte aligned");
-
-struct VS_CONSTANT_BUFFER VsConstData_dims = {};
-
-uint8_t* persistentlyMappedConstantBuffer = nullptr;
-D3D12_CONSTANT_BUFFER_VIEW_DESC constantBufferView;
 
 
 void dxgi_debug_report()
@@ -1055,12 +1041,17 @@ void InitShaders(void)
     
     const char* shaderSource = R"(
 
+        float2 pixelCoordToNCD(float2 pixel);
+        struct vs_out vs_main(struct vs_in input);
+        struct ps_out ps_main(struct ps_in input);
+
         cbuffer ConstantBuffer : register( b0 ) {
             float width;
             float height;
-            float padding0;
+            float time;
+            //float padding0;
             float padding1;
-        };
+        }
 
         /* vertex attributes go here to input to the vertex shader */
         struct vs_in {
@@ -1080,8 +1071,8 @@ void InitShaders(void)
         }
 
         vs_out vs_main(vs_in input) {
+          // TODO: What's the correct zero initialiser for hlsl 202x ?  {} and {0} do not work
           vs_out output = (vs_out)0; // zero the memory first
-
 
           // Center triangle
 
@@ -1160,7 +1151,8 @@ void InitShaders(void)
 
           
           if (input.vertexId >= 15)
-              output.colour = float4(1.0, 1.0, 0.0, 1.0);
+              //output.colour = float4(1.0, 1.0, 0.0, 1.0);
+              output.colour = float4(1.0, 1.0, time, 1.0);
           else
               output.colour = clamp(output.pos, 0, 1);
           return output;
@@ -1238,6 +1230,7 @@ void InitShaders(void)
         OutputDebugStringA("Failed to create Dxc utils instance\n");
         exit(EXIT_FAILURE);
     }
+
 
 
     IDxcBlob* vs_code;
@@ -1548,6 +1541,26 @@ void InitShaders(void)
 
     }
 }
+
+float time_lerp(void)
+{
+    // calculate a 't' value that will linearly interpolate from 0 to 1 and back every 20 seconds
+
+    static DWORD m_startTime = GetTickCount();
+
+    DWORD currentTime = GetTickCount();
+    if (m_startTime == 0)
+    {
+        m_startTime = currentTime;
+    }
+    float t = 2 * ((currentTime - m_startTime) % 20000) / 20000.0f;
+    if (t > 1.0f)
+    {
+        t = 2 - t;
+    }
+    return t;
+}
+
 
 void render(void)
 {

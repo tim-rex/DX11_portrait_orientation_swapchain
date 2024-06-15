@@ -140,7 +140,7 @@ struct VS_CONSTANT_BUFFER
 {
     float width;
     float height;
-    float _padding0;    // Buffer must be a multiple of 16 bytes
+    float time;    // Buffer must be a multiple of 16 bytes
     float _padding1;
 } VS_CONSTANT_BUFFER;
 
@@ -268,6 +268,7 @@ void dxgi_debug_init()
 #endif
 
 }
+
 
 void InitD3D11(void)
 {
@@ -808,7 +809,7 @@ void InitShaders(void)
         cbuffer ConstantBuffer : register( b0 ) {
             float width;
             float height;
-            float padding0;
+            float time;
             float padding1;
         };
 
@@ -910,7 +911,7 @@ void InitShaders(void)
 
           
           if (input.vertexId >= 15)
-              output.colour = float4(1.0, 1.0, 0.0, 1.0);
+              output.colour = float4(1.0, 1.0, time, 1.0);
           else
               output.colour = clamp(output.pos, 0, 1);
           return output;
@@ -1061,6 +1062,26 @@ void InitShaders(void)
     
 }
 
+
+float time_lerp(void)
+{
+    // calculate a 't' value that will linearly interpolate from 0 to 1 and back every 20 seconds
+
+    static DWORD m_startTime = GetTickCount();
+
+    DWORD currentTime = GetTickCount();
+    if (m_startTime == 0)
+    {
+        m_startTime = currentTime;
+    }
+    float t = 2 * ((currentTime - m_startTime) % 20000) / 20000.0f;
+    if (t > 1.0f)
+    {
+        t = 2 - t;
+    }
+    return t;
+}
+
 void render(void)
 {
 
@@ -1180,10 +1201,12 @@ void render(void)
     // We must use MAP to update constant buffers
     //device_context_11_x->UpdateSubresource(shaderConstantBuffer_dims, 0, 0, &VsConstData_dims, 0, 0);
 
-    if (framechanged)
+    //if (framechanged)
+    if (1)
     {
         VsConstData_dims.width = (float)window_width;
         VsConstData_dims.height = (float)window_height;
+        VsConstData_dims.time = time_lerp();
         framechanged = false;
 
         D3D11_MAPPED_SUBRESOURCE mappedResource;
