@@ -360,7 +360,11 @@ void dxgi_debug_post_device_init()
 
 ID3D12CommandQueue* commandQueue = nullptr;
 ID3D12DescriptorHeap* rtvHeap = nullptr;
+
+#if !ROOT_CONSTANTS_ENABLED
 ID3D12DescriptorHeap* cbvHeap = nullptr;
+#endif
+
 
 #if MSAA_ENABLED
 const UINT numFrames = 4;
@@ -399,6 +403,15 @@ struct VS_CONSTANT_BUFFER
 static_assert((sizeof(VS_CONSTANT_BUFFER) % 256) == 0, "Constant Buffer size must be 256-byte aligned");
 
 struct VS_CONSTANT_BUFFER VsConstData_dims = {};
+
+#if !ROOT_CONSTANTS_ENABLED
+uint8_t* persistentlyMappedConstantBuffer = nullptr;
+D3D12_CONSTANT_BUFFER_VIEW_DESC constantBufferView;
+#endif
+
+
+
+
 
 
 ID3D12GraphicsCommandList* commandList = nullptr;
@@ -473,12 +486,15 @@ D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc_MSAA = {
 };
 #endif
 
+
+#if !ROOT_CONSTANTS_ENABLED
 D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc = {
     .Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
     .NumDescriptors = 1,
     .Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
     .NodeMask = 0
 };
+#endif
 
 
 void InitD3D12(void)
@@ -1184,6 +1200,7 @@ void InitD3D12(void)
             }            
         }
 
+#if !ROOT_CONSTANTS_ENABLED
         // We also need a heap for our constant uniform buffer
         {
             cbvHeap = nullptr;
@@ -1199,6 +1216,8 @@ void InitD3D12(void)
 
             cbvHeap->SetName(L"cbvHeap");
         }
+#endif
+
     }
 
     // TODO: Consider AgilitySDK
@@ -1734,6 +1753,20 @@ void InitShaders(void)
     ID3DBlob* errorsBlob = nullptr;
 
 
+
+#if ROOT_CONSTANTS_ENABLED
+    D3D12_ROOT_PARAMETER1 params[] = {
+        {
+            .ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,            
+            .Constants = {
+                .ShaderRegister = 0,
+                .RegisterSpace = 0,
+                .Num32BitValues = 3
+            },
+            .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
+        }
+    };
+#else
     D3D12_ROOT_PARAMETER1 params[] = {
         {
             .ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV,
@@ -1746,7 +1779,8 @@ void InitShaders(void)
             */
             .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
         }
-    };
+        };
+#endif
 
     //D3D12_ROOT_SIGNATURE_DESC rootSigDesc = {
     D3D12_VERSIONED_ROOT_SIGNATURE_DESC rootSigDesc = {
@@ -1853,8 +1887,9 @@ void InitShaders(void)
         exit(EXIT_FAILURE);
     }
 
-    // Create a constant buffer (for framebuffer dimensions
 
+#if !ROOT_CONSTANTS_ENABLED
+    // Create a constant buffer (for framebuffer dimensions)
     {
         ID3D12Resource *constantBuffer = nullptr;
 
@@ -1922,7 +1957,11 @@ void InitShaders(void)
 #endif
 
     }
+#endif
+
+
 }
+
 
 float time_lerp(void)
 {
@@ -2118,7 +2157,16 @@ void render(void)
     }
 
 
-        commandList->DrawInstanced(21, 1, 0, 0);
+#if ROOT_CONSTANTS_ENABLED
+    // Set the root signature before doing anything
+    commandList->SetGraphicsRootSignature(rootSig);
+
+    //if (framechanged)
+    if (1)
+    {
+        commandList->SetGraphicsRoot32BitConstants(0, 3, &VsConstData_dims, 0);
+    }
+#else
     //if (framechanged)
     if (1)
     {
@@ -2138,6 +2186,9 @@ void render(void)
         ID3D12DescriptorHeap* ppHeaps[] = { cbvHeap };
         commandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
     }
+#endif
+
+
 
 
 #if 1
@@ -2268,6 +2319,17 @@ void PopulateCommandList(ID3D12GraphicsCommandList *commandListOrBundle)
     // Bundleable commands
     {
 
+#if !ROOT_CONSTANTS_ENABLED
+        // Set the root signature before doing anything
+        commandListOrBundle->SetGraphicsRootSignature(rootSig);
+
+        {
+            // Already defined by root signature
+            //commandList->SetGraphicsRootDescriptorTable(0, cbvHeap->GetGPUDescriptorHandleForHeapStart());
+
+            commandListOrBundle->SetGraphicsRootConstantBufferView(0, constantBufferView.BufferLocation);
+        }
+#endif
 
 
         {
