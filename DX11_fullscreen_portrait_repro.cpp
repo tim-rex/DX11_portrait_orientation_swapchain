@@ -129,6 +129,22 @@ BOOL framechanged = false;
 
 #if MSAA_ENABLED
 ID3D11Texture2D* msaa_render_target;
+
+constexpr unsigned floorlog2(unsigned x)
+{
+    return x == 1 ? 0 : 1 + floorlog2(x >> 1);
+}
+
+constexpr unsigned ceillog2(unsigned x)
+{
+    return x == 1 ? 0 : floorlog2(x - 1) + 1;
+}
+
+constexpr int availableMultisampleLevels = ceillog2(D3D11_MAX_MULTISAMPLE_SAMPLE_COUNT) + 1;
+
+UINT sampleCountQuality[availableMultisampleLevels];
+UINT MSAA_Count = 4;
+UINT MSAA_Quality = 0;
 #endif
 
 
@@ -645,6 +661,58 @@ void InitD3D11(void)
     }
 
 
+#if MSAA_ENABLED
+    // [35328] D3D11 ERROR : ID3D11Device::CreateTexture2D : SampleDesc.Quality specifies invalid value 1. 
+    // For 4 samples, the current graphics implementation only supports 
+    // SampleDesc.Quality less than 1. < -- if 0 is shown here for Quality, this means the graphics 
+    // implementation doesn't support 4 samples at all. 
+    // Use CheckMultisampleQualityLevels to detect what the graphics implementation supports.
+
+    for (UINT sampleCount = D3D11_MAX_MULTISAMPLE_SAMPLE_COUNT, i = availableMultisampleLevels-1; 
+        sampleCount > 0 && i >= 0;
+        sampleCount = sampleCount >> 1, i--)
+    {
+        HRESULT hr = device->CheckMultisampleQualityLevels1(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, sampleCount, 0, &sampleCountQuality[i]);
+        if (FAILED(hr))
+        {
+            OutputDebugStringA("Failed to determine Multisample quality level");
+            exit(EXIT_FAILURE);
+        }
+
+        // The valid range is between zero and one less than the level returned by CheckMultisampleQualityLevels
+        sampleCountQuality[i]--;
+
+        // If quality level is zero, it's unsupported. This will underflow to UINT_MAX
+
+        
+        char msg[1024];
+        snprintf(msg, 1024, "Multisample Count %d supports Max Quality %d\n", sampleCount, sampleCountQuality[i]);
+        OutputDebugStringA(msg);
+    }
+
+    //MSAA_Count = 4;
+    MSAA_Quality = sampleCountQuality[ceillog2(MSAA_Count)];
+
+    // Zero - 1 (UINT_MAX) means not supported for this MSAA Count
+    // The default sampler mode with no anti-aliasing has Count == 1 && Quality == 0
+    assert(MSAA_Quality != UINT_MAX);
+
+    //assert(MSAA_Quality > 0 || (MSAA_Count == 1 && MSAA_Quality == 0 ));
+
+    // If MSAA_Count == 1, we should just disable MSAA entirely and avoid the resolve
+    assert(MSAA_Count > 1);
+
+
+    {
+        char msg[1024];
+        snprintf(msg, 1024, "Using Multisample Count %d : Quality %d\n", MSAA_Count, MSAA_Quality);
+        OutputDebugStringA(msg);
+
+    }
+#endif
+
+
+
     // Swapchain creation
     {
         UINT swapchain_flags = 0;
@@ -730,6 +798,13 @@ void InitD3D11(void)
             RECT rect;
             GetClientRect(hWnd, &rect);
 
+
+            UINT samples = 1;
+            UINT quality = 0;
+            device->CheckMultisampleQualityLevels1(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, samples, 0, &quality);
+
+
+
             D3D11_TEXTURE2D_DESC desc = {
                 .Width = (UINT) rect.right - rect.left,
                 .Height = (UINT) rect.bottom - rect.top,
@@ -737,8 +812,8 @@ void InitD3D11(void)
                 .ArraySize = 1,
                 .Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
                 .SampleDesc = {
-                    .Count = 4,
-                    .Quality = 1
+                    .Count = MSAA_Count,
+                    .Quality = MSAA_Quality
                     },
                 .Usage = D3D11_USAGE_DEFAULT,
                 .BindFlags = D3D11_BIND_RENDER_TARGET,
@@ -1523,8 +1598,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     .ArraySize = 1,
                     .Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
                     .SampleDesc = {
-                        .Count = 4,
-                        .Quality = 1
+                            .Count = MSAA_Count,
+                            .Quality = MSAA_Quality
                         },
                     .Usage = D3D11_USAGE_DEFAULT,
                     .BindFlags = D3D11_BIND_RENDER_TARGET,
