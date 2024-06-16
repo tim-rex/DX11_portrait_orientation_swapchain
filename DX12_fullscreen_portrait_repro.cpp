@@ -2547,7 +2547,7 @@ void render(void)
     commandListPost->ResolveSubresource(framebuffer[frameIndex], 0, framebuffer_MSAA[frameIndex], 0, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB);
 
     // Now set the actual swapchain render target
-    commandListPost->OMSetRenderTargets(1, rtvHandleForFrame, FALSE, nullptr);
+    commandListPost->OMSetRenderTargets(1, rtvTarget, FALSE, nullptr);
 
 
     // Indicate that the back buffer will be used to present
