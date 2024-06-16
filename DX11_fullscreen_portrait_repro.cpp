@@ -1413,11 +1413,10 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 }
 
 
-static bool windowed_fullscreen = false;
-
 // Convert a styled window into a fullscreen borderless window and back again.
 void ToggleFullscreenWindow(void)
 {
+    static bool windowed_fullscreen = false;
     static RECT windowRect = {};
 
     if (DXGI_fullscreen)
@@ -1504,13 +1503,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             if (wParam == 's')
             {
 
-                if (windowed_fullscreen)
-                {
-                    // We're already in windowed fullscreen mode, abort
-                    // We only support switching from a non-fullscreen window
-                    return 0;
-                }
-                    
                 DXGI_fullscreen = !DXGI_fullscreen;
 
 #if 0
