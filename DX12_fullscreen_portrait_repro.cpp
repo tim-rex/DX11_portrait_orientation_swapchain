@@ -636,11 +636,20 @@ void InitD3D12(void)
         break;
     }
 #else
+
+#define USE_WARP 1
+#if USE_WARP
+    pFactory->EnumWarpAdapter(IID_PPV_ARGS(&dxgiAdapter));
+#else
     pFactory->EnumAdapterByGpuPreference(0, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&dxgiAdapter));
 #endif
 
+
+#endif
+
     result = D3D12CreateDevice(dxgiAdapter, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&device) );
-    
+
+
     if (FAILED(result))
     {
         OutputDebugStringA("Failed D3D12CreateDevice\n");
@@ -747,9 +756,12 @@ void InitD3D12(void)
     }
 
 
-    assert(dxgiOutput);
 
-    DXGI_MODE_DESC1 *best_fullscreen_mode = nullptr;
+    DXGI_MODE_DESC1* best_fullscreen_mode = nullptr;
+
+#if !USE_WARP  // Warp does not support querying output device
+
+    assert(dxgiOutput);
 
     // Check hardware composition support
     {
@@ -869,6 +881,8 @@ void InitD3D12(void)
 
         //assert(best_fullscreen_mode);
     }
+#endif // USE_WARP
+
 
     // Determine available multisample quality levels
     {
@@ -3028,20 +3042,41 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             swapchain_flags |= allowTearing ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;
 
 
-            IDXGIOutput* output;
-            HRESULT hr = swapchain4->GetContainingOutput(&output);
-            if (FAILED(hr))
-            {
-                // This will fail if the window resides on a display for a different device
-                // TODO: Handle this
-                OutputDebugStringA("Failed to retrieve containing output, window may have moved to a different display/interface?");
-                exit(EXIT_FAILURE);
-            }
 
             DXGI_OUTPUT_DESC output_desc;
-            output->GetDesc(&output_desc);
-            output->Release();
-            output = nullptr;
+
+            IDXGIOutput* output;
+            HRESULT hr = swapchain4->GetContainingOutput(&output);
+            if (SUCCEEDED(hr))
+            {
+                output->GetDesc(&output_desc);
+                output->Release();
+                output = nullptr;
+            }
+            else
+            {
+                // This will fail if the window resides on a display for a different device
+                OutputDebugStringA("Failed to retrieve containing output, window may have moved to a different display/interface? Or using WARP adapter\n");
+
+                // We'll hack up our own output_desc
+
+                HMONITOR monitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
+
+                assert(monitor);
+
+                MONITORINFO info = {
+                    .cbSize = sizeof(MONITORINFO)
+                };
+
+                if (!GetMonitorInfo(monitor, &info))
+                {
+                    OutputDebugStringA("Failed to GetMonitorInfo\n");
+                    exit(EXIT_FAILURE);
+                }
+
+                output_desc.DesktopCoordinates = info.rcWork;
+            }
+
 
             //this->device_context_11_x->ClearState();
             bool apply_rotation = DXGI_fullscreen && ((swapchain_flags & DXGI_SWAP_CHAIN_FLAG_NONPREROTATED)) && (output_desc.Rotation == DXGI_MODE_ROTATION_ROTATE90 || output_desc.Rotation == DXGI_MODE_ROTATION_ROTATE270);
@@ -3074,8 +3109,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             UINT frameIndex = swapchain4->GetCurrentBackBufferIndex();
 
-            swapchain4->ResizeTarget(&target_mode);
+            hr = swapchain4->ResizeTarget(&target_mode);
 
+            assert(SUCCEEDED(hr));
 
             // Reset the command list
             //flushGpu();
