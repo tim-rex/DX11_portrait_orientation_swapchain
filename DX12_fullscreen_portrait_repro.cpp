@@ -369,17 +369,58 @@ ID3D12DescriptorHeap* cbvHeap = nullptr;
 #endif
 
 
-#if MSAA_ENABLED
-const UINT numFrames = 4;
-#else
-const UINT numFrames = 1;
-#endif
 
-ID3D12Resource2* framebuffer[numFrames] = {};
+// vsync off
+// numFrames = 2 + backbufferFrames = 2
+// 1 command allocator
+// DRAW_LOTS disabled
+// 580 internal frames + 60 fps present
+
+// increasing numFrames + backbufferFrames == 3
+// 620 internal frames + 60 fps present
+
+// increasing backBufferFrames to 4 (1 more than numFrames)
+// 750 internal frames
+
+
+// If we use MULTIPLE (backbufferFrames) command allocators, we can get
+
+// numFrames = 2 + backbufferFrames = 2
+// 2 command allocators
+// DRAW_LOTS disabled
+// 550 to 900 internal frames + 57 fps present (skipping ?)
+// Without contention
+// 2,700 internal frames (stable) + 30 fps present (???)
+
+
+// increasing numFrames + backbufferFrames == 3
+// 600 - 800 internal frames + 60 fps present (locked) but some internal drops to 200(?)
+// Without contention
+// 2,800 internal frames (stable) + 30 fps present (???)
+
+
+// increasing backBufferFrames to 4 (1 more than numFrames)
+// 750 internal frames (stable) + 60 fps present (locked)
+// Without contention
+// 2,800 internal frames (stable) + 30 fps present (???)
+
+
+// The discrepancy between internal frames vs present frames only occurs in windowed (composited) mode.. FSE or windowed fullscreen shows the same number of presents regardless
+// Is it just presentmon being wierd?
+
+// Multiple command allocators makes no difference
+
+
+const UINT numFrames = 2;
+const UINT backbufferFrames = numFrames +1;
+
+
+
+ID3D12Resource2* framebuffer[backbufferFrames] = {};
 
 #if MSAA_ENABLED
 ID3D12DescriptorHeap* rtvHeap_MSAA = nullptr;
-ID3D12Resource2* framebuffer_MSAA[numFrames] = {};
+ID3D12Resource2* framebuffer_MSAA[backbufferFrames] = {};
 #endif
 
 // We need a command allocater + command list
@@ -387,7 +428,7 @@ ID3D12Resource2* framebuffer_MSAA[numFrames] = {};
 // TEST USING MULTIPLE COMMAND ALLOCATORS
 #define MULTIPLE_COMMAND_ALLOCATORS 1
 #if MULTIPLE_COMMAND_ALLOCATORS
-ID3D12CommandAllocator* commandAllocator[numFrames] = {};
+ID3D12CommandAllocator* commandAllocator[backbufferFrames] = {};
 #else
 ID3D12CommandAllocator* commandAllocator[1] = {};
 #endif
@@ -428,11 +469,11 @@ ID3D12RootSignature* rootSig = nullptr;
 ID3D12PipelineState* pso = nullptr;
 
 ID3D12Fence1* fence = nullptr;
-UINT64 fenceValues[numFrames];
+UINT64 fenceValues[backbufferFrames];
 
 HANDLE fenceEvent = INVALID_HANDLE_VALUE;
 
-D3D12_CPU_DESCRIPTOR_HANDLE rtvHandles[numFrames];
+D3D12_CPU_DESCRIPTOR_HANDLE rtvHandles[backbufferFrames];
 
 D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {
     .Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
@@ -441,7 +482,7 @@ D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {
 
 #if MSAA_ENABLED
 
-D3D12_CPU_DESCRIPTOR_HANDLE rtvHandles_MSAA[numFrames];
+D3D12_CPU_DESCRIPTOR_HANDLE rtvHandles_MSAA[backbufferFrames];
 
 D3D12_RENDER_TARGET_VIEW_DESC rtvDesc_MSAA = {
     .Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
@@ -473,7 +514,7 @@ UINT MSAA_Quality = 0;
 
 D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {
     .Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
-    .NumDescriptors = numFrames,
+    .NumDescriptors = backbufferFrames,
     .Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
     .NodeMask = 0
 };
@@ -483,7 +524,7 @@ D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {
 
 D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc_MSAA = {
     .Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
-    .NumDescriptors = numFrames,
+    .NumDescriptors = backbufferFrames,
     .Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
     .NodeMask = 0
 };
@@ -890,7 +931,7 @@ void InitD3D12(void)
                 .Quality = 0
              },
             .BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT,
-            .BufferCount = numFrames,								// Needs to be >= 2 for FLIP swap effect
+            .BufferCount = backbufferFrames,								// Needs to be >= 2 for FLIP swap effect
             .Scaling = DXGI_SCALING_NONE,
             .SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD,	// DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL
             .Flags = swapchain_flags,
@@ -1098,7 +1139,7 @@ void InitD3D12(void)
                     .Color = { 0.2f, 0.2f, 0.7f, 1.0f }
                 };
 
-                for (uint8_t i = 0; i < numFrames; i++)
+                for (uint8_t i = 0; i < backbufferFrames; i++)
                 {
 
                     device->CreateCommittedResource1(
@@ -1111,7 +1152,7 @@ void InitD3D12(void)
                         IID_PPV_ARGS(&framebuffer_MSAA[i]));
 
                     wchar_t name[32];
-                    wsprintf(name, L"MSAA buffer %d of %d", i, numFrames);
+                    wsprintf(name, L"MSAA buffer %d of %d", i, backbufferFrames);
                     framebuffer_MSAA[i]->SetName(name);
                 }
             }
@@ -1122,7 +1163,7 @@ void InitD3D12(void)
                 const UINT incrementSize = device->GetDescriptorHandleIncrementSize(rtvHeapDesc_MSAA.Type);
 
                 // Create a renderTargetView for each swapchain frame
-                for (uint8_t i = 0; i < numFrames; i++)
+                for (uint8_t i = 0; i < backbufferFrames; i++)
                 {
                     device->CreateRenderTargetView(framebuffer_MSAA[i], &rtvDesc_MSAA, rtvHandle_MSAA);
 
@@ -1164,7 +1205,7 @@ void InitD3D12(void)
             const UINT incrementSize = device->GetDescriptorHandleIncrementSize(rtvHeapDesc.Type);
 
             // Create a renderTargetView for each swapchain frame
-            for (uint8_t i = 0; i < numFrames; i++)
+            for (uint8_t i = 0; i < backbufferFrames; i++)
             {
                 result = swapchain4->GetBuffer(i, IID_PPV_ARGS(&framebuffer[i]));
                 assert(SUCCEEDED(result));
@@ -1172,7 +1213,7 @@ void InitD3D12(void)
                 device->CreateRenderTargetView(framebuffer[i], &rtvDesc, rtvHandle);
 
                 wchar_t name[32];
-                wsprintf(name, L"Framebuffer %d of %d", i, numFrames);
+                wsprintf(name, L"Framebuffer %d of %d", i, backbufferFrames);
                 framebuffer[i]->SetName(name);
                 rtvHandles[i] = rtvHandle;
                 rtvHandle.ptr += incrementSize;       
@@ -1234,8 +1275,9 @@ void InitD3D12(void)
     // frame while the GPU renders the previous.
 
 
+#if MULTIPLE_COMMAND_ALLOCATORS
     // Create a command allocator
-    for (int i=0; i < numFrames; i++)
+    for (int i=0; i < backbufferFrames; i++)
     {
         HRESULT result = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&commandAllocator[i]));
 
@@ -1250,6 +1292,21 @@ void InitD3D12(void)
         _snwprintf_s(name, 32, L"command allocator %d", i);
         commandAllocator[i]->SetName(name);
     }
+#else
+    {
+        HRESULT result = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&commandAllocator[0]));
+
+        if (FAILED(result))
+        {
+            OutputDebugStringA("Failed to CreateCommandAllocator\n");
+            exit(EXIT_FAILURE);
+        }
+
+        commandAllocator[0]->SetName(L"command allocator 0");
+    }
+
+#endif
+
 
 #if BUNDLES_ENABLED
     {
@@ -2010,7 +2067,7 @@ void render(void)
     commandAllocator[frameIndex]->Reset();
     commandList->Reset(commandAllocator[frameIndex], pso);
 #else
-    commandAllocator[0].Reset();
+    commandAllocator[0]->Reset();
     commandList->Reset(commandAllocator[0], pso);
 #endif
 
@@ -2697,7 +2754,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
                 // Release the existing MSAA resources
 
-                for (UINT i = 0; i < numFrames; i++)
+                for (UINT i = 0; i < backbufferFrames; i++)
                 {
                     framebuffer_MSAA[i]->Release();
                     framebuffer_MSAA[i] = nullptr;
@@ -2735,7 +2792,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     .Color = { 0.2f, 0.2f, 0.7f, 1.0f }
                 };
 
-                for (uint8_t i = 0; i < numFrames; i++)
+                for (uint8_t i = 0; i < backbufferFrames; i++)
                 {
 
                     device->CreateCommittedResource1(
@@ -2748,7 +2805,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                         IID_PPV_ARGS(&framebuffer_MSAA[i]));
 
                     wchar_t name[32];
-                    wsprintf(name, L"MSAA buffer %d of %d", i, numFrames);
+                    wsprintf(name, L"MSAA buffer %d of %d", i, backbufferFrames);
                     framebuffer_MSAA[i]->SetName(name);
                 }
 
@@ -2759,7 +2816,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     const UINT incrementSize = device->GetDescriptorHandleIncrementSize(rtvHeapDesc_MSAA.Type);
 
                     // Create a renderTargetView for each swapchain frame
-                    for (uint8_t i = 0; i < numFrames; i++)
+                    for (uint8_t i = 0; i < backbufferFrames; i++)
                     {
                         device->CreateRenderTargetView(framebuffer_MSAA[i], &rtvDesc_MSAA, rtvHandle_MSAA);
 
@@ -2782,7 +2839,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             // Release the resources holding references to the swap chain (required by ResizeBufers)
             // and reset the frame fence values to the current fence value
 
-            for (UINT i = 0; i < numFrames; i++)
+            for (UINT i = 0; i < backbufferFrames; i++)
             {
                 //framebuffer[i].Reset();  // <-- relies on ComPtr
                 framebuffer[i]->Release();
@@ -2807,7 +2864,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             // Preserve the existing buffer count and format.
             // Automatically choose the width and height to match the client rect for HWNDs.
 
-            swapchain4->ResizeBuffers(numFrames, window_width, window_height, DXGI_FORMAT_UNKNOWN, swapchain_flags);
+            swapchain4->ResizeBuffers(backbufferFrames, window_width, window_height, DXGI_FORMAT_UNKNOWN, swapchain_flags);
 
             if (FAILED(hr))
             {
@@ -2822,7 +2879,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = rtvHeap->GetCPUDescriptorHandleForHeapStart();
                 const UINT incrementSize = device->GetDescriptorHandleIncrementSize(rtvHeapDesc.Type);
 
-                for (uint8_t i = 0; i < numFrames; i++)
+                for (uint8_t i = 0; i < backbufferFrames; i++)
                 {
                     hr = swapchain4->GetBuffer(i, IID_PPV_ARGS(&framebuffer[i]));
 
@@ -2847,7 +2904,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     }
 
                     wchar_t name[32];
-                    wsprintf(name, L"Framebuffer %d of %d", i, numFrames);
+                    wsprintf(name, L"Framebuffer %d of %d", i, backbufferFrames);
                     framebuffer[i]->SetName(name);
                     rtvHandles[i] = rtvHandle;
                     rtvHandle.ptr += incrementSize;
@@ -2862,7 +2919,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 #endif
 
             // incorrect
-            //commandList->OMSetRenderTargets(numFrames, &rtvHandles[frameIndex], FALSE, nullptr);
+            //commandList->OMSetRenderTargets(backbufferFrames, &rtvHandles[frameIndex], FALSE, nullptr);
 
             // Set up the viewport.
             D3D12_VIEWPORT vp = {
@@ -2914,7 +2971,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 #endif
 
 
-            for (UINT i = 0; i < numFrames; i++)
+            for (UINT i = 0; i < backbufferFrames; i++)
             {
                 framebuffer[i]->Release();
                 framebuffer[i] = nullptr;
@@ -2923,7 +2980,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             commandList->Release();
 
 #if MULTIPLE_COMMAND_ALLOCATORS
-            for (UINT i = 0; i < numFrames; i++)
+            for (UINT i = 0; i < backbufferFrames; i++)
                 commandAllocator[i]->Release();
 #else
             commandAllocator[0]->Release();
