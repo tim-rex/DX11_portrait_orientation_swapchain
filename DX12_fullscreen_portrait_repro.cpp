@@ -2211,8 +2211,8 @@ void render(void)
 
     // Now loop and create some artificial load
     {
-        const int viewports_x = 1000;
-        const int viewports_y = 1000;
+        const int viewports_x = 100;
+        const int viewports_y = 100;
 
         for (int i = 0; i < viewports_x; i++)
         {
@@ -2245,10 +2245,13 @@ void render(void)
                 };
 
                 commandList->RSSetViewports(1, &viewport);
-                commandList->DrawInstanced(21, 0, 0, 0);   // 7 tri's
+                commandList->DrawInstanced(21, 1, 0, 0);   // 7 tri's
             }
         }
+
     }
+
+
 #endif
 
 
