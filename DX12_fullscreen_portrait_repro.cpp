@@ -2957,7 +2957,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                         exit(EXIT_FAILURE);
                     }
 
-                    D3D12_RESOURCE_DESC1 desc1 = framebuffer[frameIndex]->GetDesc1();
+                    D3D12_RESOURCE_DESC1 desc1 = framebuffer[i]->GetDesc1();
 
                     //char msg[1024];
                     snprintf(msg, 1024, "Swapchain buffer[%u] size : %" PRIu64 " x %u\n", i, desc1.Width, desc1.Height);
