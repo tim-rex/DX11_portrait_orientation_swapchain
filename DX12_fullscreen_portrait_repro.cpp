@@ -2351,7 +2351,7 @@ void render(void)
     commandQueue->ExecuteCommandLists(1, ppCommandLists);
 
     const UINT vsync = 0;
-    const UINT presentFlags = (allowTearing && !DXGI_fullscreen) ? DXGI_PRESENT_ALLOW_TEARING : 0;
+    const UINT presentFlags = (allowTearing && !DXGI_fullscreen && vsync == 0) ? DXGI_PRESENT_ALLOW_TEARING : 0;
     //const UINT presentFlags = 0;
 
 
