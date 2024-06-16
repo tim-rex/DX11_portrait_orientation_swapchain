@@ -906,6 +906,7 @@ void InitD3D12(void)
             .Type = D3D12_COMMAND_LIST_TYPE_DIRECT,
             .Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL ,
             .Flags = D3D12_COMMAND_QUEUE_FLAG_NONE ,
+            //.Flags = D3D12_COMMAND_QUEUE_FLAG_DISABLE_GPU_TIMEOUT,
             .NodeMask = 0,
         };
 
