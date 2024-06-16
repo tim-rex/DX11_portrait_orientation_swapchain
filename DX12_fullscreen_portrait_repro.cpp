@@ -346,6 +346,16 @@ void dxgi_debug_post_device_init()
             OutputDebugStringA(msg);
             exit(EXIT_FAILURE);
         }
+    }
+
+    {
+        D3D12_FEATURE_DATA_FEATURE_LEVELS levels = {};
+
+        device->CheckFeatureSupport(D3D12_FEATURE_FEATURE_LEVELS, &levels, sizeof(levels));
+
+        char msg[1024];
+        snprintf(msg, 1024, "Max supported feature level : %x", levels.MaxSupportedFeatureLevel);
+        OutputDebugStringA(msg);
 
     }
    
