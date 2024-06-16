@@ -3291,12 +3291,25 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             WaitForGPU();
 
 #if MSAA_ENABLED
-            assert(false && "Cleanup after MSAA");
+            for (UINT i = 0; i < backbufferFrames; i++)
+            {
+                framebuffer_MSAA[i]->Release();
+                framebuffer_MSAA[i] = nullptr;
+            }
 #endif
 
 #if RENDER_THREADS
-            assert(false && "Cleanup render threads");
-            assert(false && "Cleanup render thread commandLists");
+            for (UINT i = 0; i < numThreads; i++)
+            {
+                m_threadParameters[i].commandList->Release();
+                m_threadParameters[i].commandList = nullptr;
+
+                for (UINT j = 0; j < backbufferFrames; j++)
+                {
+                    m_threadParameters[i].commandAllocator[j]->Release();
+                    m_threadParameters[i].commandAllocator[j] = nullptr;
+                }
+            }
 #endif
 
 
