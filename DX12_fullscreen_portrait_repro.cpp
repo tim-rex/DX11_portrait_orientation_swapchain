@@ -23,6 +23,7 @@
 #include <vector>
 #include <inttypes.h>
 
+#include <process.h>
 
 #define ARRAY_COUNT(array) \
     (sizeof(array) / (sizeof(array[0]) * (sizeof(array) != sizeof(void *) || sizeof(array[0]) <= sizeof(void *))))
@@ -360,6 +361,30 @@ void dxgi_debug_post_device_init()
 #define DRAW_LOTS_UNOPTIMISED 1
 
 
+#define RENDER_THREADS 8
+
+const int numThreads = RENDER_THREADS;
+
+const UINT numFrames = 2;
+const UINT backbufferFrames = numFrames + 1;
+
+
+#if RENDER_THREADS
+
+struct ThreadParameter
+{
+    int threadIndex;
+    ID3D12CommandAllocator* commandAllocator[backbufferFrames] = {};
+    ID3D12GraphicsCommandList* commandList = nullptr;
+};
+
+ThreadParameter m_threadParameters[numThreads];
+
+HANDLE threadHandles[numThreads];
+HANDLE threadSignalBeginRenderFrame[numThreads];
+HANDLE threadSignalFinishRenderFrame[numThreads];
+#endif
+
 
 ID3D12CommandQueue* commandQueue = nullptr;
 ID3D12DescriptorHeap* rtvHeap = nullptr;
@@ -411,10 +436,6 @@ ID3D12DescriptorHeap* cbvHeap = nullptr;
 // Multiple command allocators makes no difference
 
 
-const UINT numFrames = 2;
-const UINT backbufferFrames = numFrames +1;
-
-
 
 ID3D12Resource2* framebuffer[backbufferFrames] = {};
 
@@ -425,13 +446,8 @@ ID3D12Resource2* framebuffer_MSAA[backbufferFrames] = {};
 
 // We need a command allocater + command list
 
-// TEST USING MULTIPLE COMMAND ALLOCATORS
-#define MULTIPLE_COMMAND_ALLOCATORS 1
-#if MULTIPLE_COMMAND_ALLOCATORS
+
 ID3D12CommandAllocator* commandAllocator[backbufferFrames] = {};
-#else
-ID3D12CommandAllocator* commandAllocator[1] = {};
-#endif
 
 
 
@@ -458,7 +474,9 @@ D3D12_CONSTANT_BUFFER_VIEW_DESC constantBufferView;
 
 
 
-ID3D12GraphicsCommandList* commandList = nullptr;
+ID3D12GraphicsCommandList* commandListPre = nullptr;
+ID3D12GraphicsCommandList* commandListPost = nullptr;
+
 
 #if BUNDLES_ENABLED
 ID3D12CommandAllocator* bundleAllocator = {};
@@ -1276,7 +1294,6 @@ void InitD3D12(void)
     // frame while the GPU renders the previous.
 
 
-#if MULTIPLE_COMMAND_ALLOCATORS
     // Create a command allocator
     for (int i=0; i < backbufferFrames; i++)
     {
@@ -1288,25 +1305,10 @@ void InitD3D12(void)
             exit(EXIT_FAILURE);
         }
 
-        wchar_t name[32];
-        
+        wchar_t name[32];        
         _snwprintf_s(name, 32, L"command allocator %d", i);
         commandAllocator[i]->SetName(name);
     }
-#else
-    {
-        HRESULT result = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&commandAllocator[0]));
-
-        if (FAILED(result))
-        {
-            OutputDebugStringA("Failed to CreateCommandAllocator\n");
-            exit(EXIT_FAILURE);
-        }
-
-        commandAllocator[0]->SetName(L"command allocator 0");
-    }
-
-#endif
 
 
 #if BUNDLES_ENABLED
@@ -1324,6 +1326,29 @@ void InitD3D12(void)
     }
 #endif
 
+
+#if RENDER_THREADS
+    for (int i = 0; i < numThreads; i++)
+    {
+        for (int j = 0; j < backbufferFrames; j++)
+        {
+            HRESULT result = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&m_threadParameters[i].commandAllocator[j]));
+
+            if (FAILED(result))
+            {
+                OutputDebugStringA("Failed to CreateCommandAllocator for render thread\n");
+                exit(EXIT_FAILURE);
+            }
+
+            wchar_t name[64];
+            _snwprintf_s(name, 64, L"command allocator render thread %d frameindex %d", i, j);
+            m_threadParameters[i].commandAllocator[j]->SetName(name);
+        }
+
+    }
+#endif
+
+
     // Pipeline state is setup later (during shader setup)
 
 
@@ -1331,17 +1356,50 @@ void InitD3D12(void)
 
 #if 1
     {
-        HRESULT result = device->CreateCommandList1(0, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_LIST_FLAG_NONE, IID_PPV_ARGS(&commandList));
+        HRESULT result = device->CreateCommandList1(0, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_LIST_FLAG_NONE, IID_PPV_ARGS(&commandListPre));
 
         if (FAILED(result))
         {
             OutputDebugStringA("Failed to CreateCommandList1\n");
             exit(EXIT_FAILURE);
         }
-        commandList->SetName(L"commandList");
+        commandListPre->SetName(L"commandListPre");
+
+
+
+        result = device->CreateCommandList1(0, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_LIST_FLAG_NONE, IID_PPV_ARGS(&commandListPost));
+
+        if (FAILED(result))
+        {
+            OutputDebugStringA("Failed to CreateCommandList1\n");
+            exit(EXIT_FAILURE);
+        }
+        commandListPost->SetName(L"commandListPost");
+
 
         // This command list is created in a closed state by default
     }
+
+#if RENDER_THREADS
+    for (int i=0; i < numThreads; i++)
+    {
+        HRESULT result = device->CreateCommandList1(0, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_LIST_FLAG_NONE, IID_PPV_ARGS(&m_threadParameters[i].commandList));
+
+        if (FAILED(result))
+        {
+            OutputDebugStringA("Failed to CreateCommandList1\n");
+            exit(EXIT_FAILURE);
+        }
+
+        wchar_t name[1024];        
+        wsprintf(name, L"thread %d commandlist", i);
+        m_threadParameters[i].commandList->SetName(name);
+
+        // This command list is created in a closed state by default
+    }
+
+#endif
+
 
 #if BUNDLES_ENABLED
     {
@@ -1352,7 +1410,7 @@ void InitD3D12(void)
             OutputDebugStringA("Failed to CreateCommandList1 Bundle\n");
             exit(EXIT_FAILURE);
         }
-        commandList->SetName(L"commandListBundle");
+        commandListBundle->SetName(L"commandListBundle");
 
         // This command list is created in a closed state by default
     }
@@ -2053,8 +2111,8 @@ void DrawLotsUnoptimised(ID3D12GraphicsCommandList* cmdList, UINT threadIndex, U
     
     // Now loop and create some artificial load
     {
-        const int viewports_x = 110;
-        const int viewports_y = 110;
+        const int viewports_x = 100;
+        const int viewports_y = 100;
 
         //const int viewports_x = 10;
         //const int viewports_y = 10;
@@ -2065,13 +2123,12 @@ void DrawLotsUnoptimised(ID3D12GraphicsCommandList* cmdList, UINT threadIndex, U
 
 
 
-        const int this_batch_begin = per_batch * threadIndex;
-        const int this_batch_end = (per_batch * float(threadIndex + 1) ) - 1;
+        const int this_batch_begin = (int) (per_batch * threadIndex);
+        const int this_batch_end = ((int)(per_batch * float(threadIndex + 1) )) - 1;
 
         //char msg[1024];
         //snprintf(msg, 1024, "threadId %d of %d threads. Total Viewports = %d. Per batch = %d.  Begin: %d  End: %d\n", threadIndex, numThreads, total_viewports, (int)per_batch, this_batch_begin, this_batch_end);
         //OutputDebugStringA(msg);
-
 
 #if 1
         // new way
@@ -2161,27 +2218,44 @@ void render(void)
     UINT frameIndex = swapchain4->GetCurrentBackBufferIndex();
 
 
-    D3D12_CPU_DESCRIPTOR_HANDLE *rtvHandleForFrame = &rtvHandles[frameIndex];
+
+
 
 #if MSAA_ENABLED
-    D3D12_CPU_DESCRIPTOR_HANDLE* rtvHandleForFrame_MSAA = &rtvHandles_MSAA[frameIndex];
-    D3D12_CPU_DESCRIPTOR_HANDLE* rtvTarget = rtvHandleForFrame_MSAA;
+    D3D12_CPU_DESCRIPTOR_HANDLE* rtvTarget = &rtvHandles_MSAA[frameIndex];
 #else
-    D3D12_CPU_DESCRIPTOR_HANDLE* rtvTarget = rtvHandleForFrame;
+    D3D12_CPU_DESCRIPTOR_HANDLE* rtvTarget = &rtvHandles[frameIndex];
 #endif
 
     // Now start rendering
-    
-    // TODO: Is it correct / prefererd to reset the command allocator every frame ??
 
-#if MULTIPLE_COMMAND_ALLOCATORS
+    // TODO: Is it correct / preferred to reset the command allocator every frame ??
+
+
     commandAllocator[frameIndex]->Reset();
-    commandList->Reset(commandAllocator[frameIndex], pso);
-#else
-    commandAllocator[0]->Reset();
-    commandList->Reset(commandAllocator[0], pso);
-#endif
+    commandListPre->Reset(commandAllocator[frameIndex], pso);
 
+
+    for (int i = 0; i < numThreads; i++)
+    {
+        m_threadParameters[i].commandAllocator[frameIndex]->Reset();
+        m_threadParameters[i].commandList->Reset(m_threadParameters[i].commandAllocator[frameIndex], pso);
+    }
+
+
+#if DRAW_LOTS_UNOPTIMISED && RENDER_THREADS
+    // Tell our render threads to kick into action
+    // They'll use their own commandLists and we'll coalesce them later
+
+    // You can execute command lists on any thread. Depending on the work 
+    // load, apps can choose between using ExecuteCommandLists on one thread 
+    // vs ExecuteCommandList from multiple threads.
+
+    // We need to coalesce and execute BEFORE the MSAA resolve
+
+    for (int i = 0; i < numThreads; i++)
+        SetEvent(threadSignalBeginRenderFrame[i]);
+#endif
 
     // Set the viewport
     {
@@ -2198,8 +2272,8 @@ void render(void)
         snprintf(msg, 1024, "render time viewport dimensions %f x %f\n", viewport.Width, viewport.Height);
         OutputDebugStringA(msg);
         */
-        commandList->RSSetViewports(1, &viewport);
-        commandList->RSSetScissorRects(1, &scissorRect);
+        commandListPre->RSSetViewports(1, &viewport);
+        commandListPre->RSSetScissorRects(1, &scissorRect);
     }
 
 
@@ -2220,7 +2294,7 @@ void render(void)
             }
         };
 
-        commandList->ResourceBarrier(1, &resourceBarrierTransitionTargetPresent);
+        commandListPre->ResourceBarrier(1, &resourceBarrierTransitionTargetPresent);
     }
 
 
@@ -2239,21 +2313,21 @@ void render(void)
             }
         };
 
-        commandList->ResourceBarrier(1, &resourceBarrierTransitionPresentTarget);
+        commandListPre->ResourceBarrier(1, &resourceBarrierTransitionPresentTarget);
     }
 #endif
 
 
     // Set render targets
     {
-        commandList->OMSetRenderTargets(1, rtvTarget, FALSE, nullptr);
+        commandListPre->OMSetRenderTargets(1, rtvTarget, FALSE, nullptr);
     }
 
     // Clear the backbuffer entirely
     if (1)
     {
         const float clearColor1[4] = { 0.2f, 0.2f, 0.7f, 1.0f };
-        commandList->ClearRenderTargetView(*rtvTarget, clearColor1, 0, nullptr);
+        commandListPre->ClearRenderTargetView(*rtvTarget, clearColor1, 0, nullptr);
     }
 
     // Draw something
@@ -2272,7 +2346,7 @@ void render(void)
                 .bottom = 300
             };
 
-            commandList->ClearRenderTargetView(*rtvTarget, clearColor, 1, &rect);
+            commandListPre->ClearRenderTargetView(*rtvTarget, clearColor, 1, &rect);
         }
 
         {
@@ -2284,7 +2358,7 @@ void render(void)
             rect.bottom = rect.top + 500;
 
             // Pink from top
-            commandList->ClearRenderTargetView(*rtvTarget, clearColor, 1, &rect);
+            commandListPre->ClearRenderTargetView(*rtvTarget, clearColor, 1, &rect);
         }
 
         {
@@ -2296,7 +2370,7 @@ void render(void)
             rect.bottom = rect.top + 500;
 
             // Green from bottom
-            commandList->ClearRenderTargetView(*rtvTarget, clearColor2, 1, &rect);
+            commandListPre->ClearRenderTargetView(*rtvTarget, clearColor2, 1, &rect);
         }
 
         // TODO: How to enable blending?
@@ -2311,7 +2385,7 @@ void render(void)
             rect.bottom = rect.top + 100;
 
             // Black from bottom right
-            commandList->ClearRenderTargetView(*rtvTarget, clearColor3, 1, &rect);
+            commandListPre->ClearRenderTargetView(*rtvTarget, clearColor3, 1, &rect);
         }
     }
 
@@ -2330,12 +2404,12 @@ void render(void)
 
 #if ROOT_CONSTANTS_ENABLED
     // Set the root signature before doing anything
-    commandList->SetGraphicsRootSignature(rootSig);
+    commandListPre->SetGraphicsRootSignature(rootSig);
 
     //if (framechanged)
     if (1)
     {
-        commandList->SetGraphicsRoot32BitConstants(0, 3, &VsConstData_dims, 0);
+        commandListPre->SetGraphicsRoot32BitConstants(0, 3, &VsConstData_dims, 0);
     }
 #else
     //if (framechanged)
@@ -2355,7 +2429,7 @@ void render(void)
 
 
         ID3D12DescriptorHeap* ppHeaps[] = { cbvHeap };
-        commandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
+        commandListPre->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
     }
 #endif
 
@@ -2365,24 +2439,61 @@ void render(void)
 #if 1
     // Populate the commandlist (or, if we're using bundles - use the bundle we made on init)
 #if BUNDLES_ENABLED
-    commandList->ExecuteBundle(commandListBundle);
+    commandListPre->ExecuteBundle(commandListBundle);
 #else
-    PopulateCommandList(commandList);
+    PopulateCommandList(commandListPre);
 #endif
 #endif
+
+
+    commandListPre->Close();
+    static ID3D12CommandList *commandListPreList[] = { commandListPre };
+    commandQueue->ExecuteCommandLists(1, commandListPreList);
 
 
 
 #if DRAW_LOTS_UNOPTIMISED
+
+#if RENDER_THREADS
+
+    // We need to coalesce and execute our render threads BEFORE the MSAA resolve
+    // Wait for our render threads
+    WaitForMultipleObjects(numThreads, threadSignalFinishRenderFrame, TRUE, INFINITE);
+
+    // Our thread generated commandLists are ready to execute
+
+    {
+        ID3D12CommandList* ppCommandLists[numThreads] = {};
+        for (int i = 0; i < numThreads; i++)
+        {
+            ppCommandLists[i] = m_threadParameters[i].commandList;
+
+        }
+
+        commandQueue->ExecuteCommandLists(numThreads, ppCommandLists);
+    }
+
+
+#else
+    // Simulate multiple threads, but really we're just using the current commandList on 1 thread
     const int numThreads = 5;
     for (UINT i = 0; i < numThreads; i++)
-        DrawLotsUnoptimised(commandList, i, numThreads);
+        DrawLotsUnoptimised(commandListPost, i, numThreads);
 #endif
 
 
-    // Drawing complete
+#endif
+
+
     
+
+    // Drawing complete
+
     // Perform the resolve
+
+    commandListPost->Reset(commandAllocator[frameIndex], pso);
+
+
 #if MSAA_ENABLED
 
     // Transition MSAA buffer from TARGET to SOURCE
@@ -2418,15 +2529,15 @@ void render(void)
             }
         };
 
-        commandList->ResourceBarrier(2, &resourceBarrierTransitionMSAATargetToSource_Framebuffer_PresentToResolve[0]);
+        commandListPost->ResourceBarrier(2, &resourceBarrierTransitionMSAATargetToSource_Framebuffer_PresentToResolve[0]);
     }
 
-   
 
-    commandList->ResolveSubresource(framebuffer[frameIndex], 0, framebuffer_MSAA[frameIndex], 0, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB);
+
+    commandListPost->ResolveSubresource(framebuffer[frameIndex], 0, framebuffer_MSAA[frameIndex], 0, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB);
 
     // Now set the actual swapchain render target
-    commandList->OMSetRenderTargets(1, rtvHandleForFrame, FALSE, nullptr);
+    commandListPost->OMSetRenderTargets(1, rtvHandleForFrame, FALSE, nullptr);
 
 
     // Indicate that the back buffer will be used to present
@@ -2443,12 +2554,12 @@ void render(void)
             }
         };
 
-        commandList->ResourceBarrier(1, &resourceBarrierTransitionTargetPresent);
+        commandListPost->ResourceBarrier(1, &resourceBarrierTransitionTargetPresent);
     }
 
 
 #else
-    
+
     // Indicate that the back buffer will be used to present
     {
         // Create a resource barrier
@@ -2463,17 +2574,18 @@ void render(void)
             }
         };
 
-        commandList->ResourceBarrier(1, &resourceBarrierTransitionTargetPresent);
+        commandListPost->ResourceBarrier(1, &resourceBarrierTransitionTargetPresent);
     }
 
 #endif
 
 
-    commandList->Close();
+    commandListPost->Close();
 
-
-    ID3D12CommandList* ppCommandLists[] = { commandList };
-    commandQueue->ExecuteCommandLists(1, ppCommandLists);
+    {
+        ID3D12CommandList* ppCommandLists[] = { commandListPost };
+        commandQueue->ExecuteCommandLists(ARRAY_COUNT(ppCommandLists), ppCommandLists);
+    }
 
     const UINT vsync = 0;
     const UINT presentFlags = (allowTearing && !DXGI_fullscreen && vsync == 0) ? DXGI_PRESENT_ALLOW_TEARING : 0;
@@ -2499,17 +2611,15 @@ void PopulateCommandList(ID3D12GraphicsCommandList *commandListOrBundle)
     // Bundleable commands
     {
 
-#if !ROOT_CONSTANTS_ENABLED
-        // Set the root signature before doing anything
+
         commandListOrBundle->SetGraphicsRootSignature(rootSig);
 
+        //if (framechanged)
+        if (1)
         {
-            // Already defined by root signature
-            //commandList->SetGraphicsRootDescriptorTable(0, cbvHeap->GetGPUDescriptorHandleForHeapStart());
-
-            commandListOrBundle->SetGraphicsRootConstantBufferView(0, constantBufferView.BufferLocation);
+            commandListOrBundle->SetGraphicsRoot32BitConstants(0, 3, &VsConstData_dims, 0);
         }
-#endif
+
 
 
         {
@@ -2541,6 +2651,156 @@ void InitBundle()
 #endif
 }
 
+
+#if RENDER_THREADS
+
+static unsigned int WINAPI RenderThread(LPVOID lpParameter)
+{
+    ThreadParameter* parameter = (ThreadParameter*)lpParameter;
+
+
+    int threadIndex = parameter->threadIndex;
+    
+
+
+    assert(threadIndex >= 0);
+    assert(threadIndex < numThreads);
+
+
+    while (threadIndex >= 0 && threadIndex < numThreads)
+    {
+        // Wait for the main thread to signal us
+
+        WaitForSingleObject(threadSignalBeginRenderFrame[threadIndex], INFINITE);
+
+
+        // Turns out we need to setup the root sig + render targets for EACH command list
+        // Even if the preceding command list has already done so for this frame
+        // Very annoying
+
+
+#if ROOT_CONSTANTS_ENABLED
+        parameter->commandList->SetGraphicsRootSignature(rootSig);
+
+        //if (framechanged)
+        if (1)
+        {
+            parameter->commandList->SetGraphicsRoot32BitConstants(0, 3, &VsConstData_dims, 0);
+        }
+#else
+        //if (framechanged)
+        if (1)
+        {
+            assert(persistentlyMappedConstantBuffer);
+            memcpy(persistentlyMappedConstantBuffer, &VsConstData_dims, sizeof(VsConstData_dims));
+        }
+
+        // Set descriptor heaps
+        {
+            // SetDescriptorHeaps can be called on a bundle, but the bundle descriptor heaps must match the calling 
+            // command list descriptor heap.
+            // For more information on bundle restrictions, refer to Creating and Recording Command Lists and Bundles.\
+                //
+                // So.. What's the point?!  Genuine question
+
+
+            ID3D12DescriptorHeap* ppHeaps[] = { cbvHeap };
+            commandListPre->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
+        }
+#endif
+
+        // Set render targets
+        {
+            UINT frameIndex = swapchain4->GetCurrentBackBufferIndex();
+
+#if MSAA_ENABLED
+            D3D12_CPU_DESCRIPTOR_HANDLE* rtvTarget = &rtvHandles_MSAA[frameIndex];
+#else
+            D3D12_CPU_DESCRIPTOR_HANDLE* rtvTarget = &rtvHandles[frameIndex];
+#endif
+
+            parameter->commandList->OMSetRenderTargets(1, rtvTarget, FALSE, nullptr);
+        }
+
+
+        {
+            // Ref: https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nn-d3d12-id3d12pipelinestate
+
+            static bool pso_changed = true;
+            if (pso_changed)
+            {
+                parameter->commandList->SetPipelineState(pso);
+                pso_changed = false;
+            }
+
+            parameter->commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        }
+
+
+        D3D12_RECT scissorRect = { 0, 0, (LONG)window_width, (LONG)window_height };
+        parameter->commandList->RSSetScissorRects(1, &scissorRect);
+
+        /*
+        {
+            parameter->commandList->SetGraphicsRootSignature(rootSig);
+
+            parameter->commandList->SetGraphicsRoot32BitConstants(0, 3, &VsConstData_dims, 0);
+
+            //parameter->commandList->SetPipelineState(pso);
+
+            //ID3D12DescriptorHeap* ppHeaps[] = { m_cbvSrvHeap.Get(), m_samplerHeap.Get() };
+            //pCommandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
+
+            //pCommandList->RSSetViewports(1, &m_viewport);
+            //pCommandList->RSSetScissorRects(1, &m_scissorRect);
+
+            parameter->commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+            //pCommandList->IASetVertexBuffers(0, 1, &m_vertexBufferView);
+            //pCommandList->IASetIndexBuffer(&m_indexBufferView);
+            //pCommandList->SetGraphicsRootDescriptorTable(3, m_samplerHeap->GetGPUDescriptorHandleForHeapStart());
+            //pCommandList->OMSetStencilRef(0);
+        }
+        */
+
+
+        // Do some stuff
+        // Write to our own commandList
+        DrawLotsUnoptimised(parameter->commandList, threadIndex, numThreads);
+        // Close the command list
+
+        parameter->commandList->Close();
+
+        // Tell the main thread we're done
+        SetEvent(threadSignalFinishRenderFrame[threadIndex]);
+    }
+
+    return 0;
+}
+#endif
+
+void InitThreads()
+{
+#if RENDER_THREADS
+    for (int i = 0; i < numThreads; i++)
+    {
+        // Initialise event handles
+
+        threadSignalBeginRenderFrame[i] = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+        threadSignalFinishRenderFrame[i] = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+
+        assert(threadSignalBeginRenderFrame[i]);
+        assert(threadSignalFinishRenderFrame[i]);
+
+        m_threadParameters[i].threadIndex = i;
+
+        threadHandles[i] = (HANDLE)_beginthreadex(nullptr, 0, &RenderThread, (LPVOID) &m_threadParameters[i], 0, nullptr);
+
+        assert(threadHandles[i]);
+    }
+#endif
+}
+
 DWORD windowStyle = WS_OVERLAPPEDWINDOW;
 
 BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
@@ -2558,6 +2818,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    InitD3D12();
    InitShaders();
    InitBundle();
+   InitThreads();
 
    ShowWindow(hWnd, nCmdShow);
    UpdateWindow(hWnd);
@@ -2916,13 +3177,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 fenceValues[i] = fenceValues[frameIndex]; // ??
             }
 
-#if MULTIPLE_COMMAND_ALLOCATORS
             commandAllocator[frameIndex]->Reset();
-            commandList->Reset(commandAllocator[frameIndex], nullptr);
-#else
-            commandAllocator[0]->Reset();
-            commandList->Reset(commandAllocator[0], nullptr);
-#endif
+            commandListPre->Reset(commandAllocator[frameIndex], nullptr);
 
             //DXGI_OUTPUT_DESC output_desc;
             //DXGI_OUTPUT_DESC1 output_desc1;
@@ -2981,13 +3237,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             // Set render targets
 #if MSAA_ENABLED
-            commandList->OMSetRenderTargets(1, &rtvHandles_MSAA[frameIndex], FALSE, nullptr);
+            commandListPre->OMSetRenderTargets(1, &rtvHandles_MSAA[frameIndex], FALSE, nullptr);
 #else
-            commandList->OMSetRenderTargets(1, &rtvHandles[frameIndex], FALSE, nullptr);
+            commandListPre->OMSetRenderTargets(1, &rtvHandles[frameIndex], FALSE, nullptr);
 #endif
 
             // incorrect
-            //commandList->OMSetRenderTargets(backbufferFrames, &rtvHandles[frameIndex], FALSE, nullptr);
+            //commandListPre->OMSetRenderTargets(backbufferFrames, &rtvHandles[frameIndex], FALSE, nullptr);
 
             // Set up the viewport.
             D3D12_VIEWPORT vp = {
@@ -3007,10 +3263,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             D3D12_RECT scissorRect = { 0, 0, (LONG) window_width, (LONG) window_height };
 
-            commandList->RSSetViewports(1, &viewport);
-            commandList->RSSetScissorRects(1, &scissorRect);
-            commandList->Close();
-            ID3D12CommandList* ppCommandLists[] = { commandList };
+            commandListPre->RSSetViewports(1, &viewport);
+            commandListPre->RSSetScissorRects(1, &scissorRect);
+            commandListPre->Close();
+            ID3D12CommandList* ppCommandLists[] = { commandListPre };
             commandQueue->ExecuteCommandLists(1, ppCommandLists);
             
             WaitForGPU();
@@ -3038,6 +3294,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             assert(false && "Cleanup after MSAA");
 #endif
 
+#if RENDER_THREADS
+            assert(false && "Cleanup render threads");
+            assert(false && "Cleanup render thread commandLists");
+#endif
+
 
             for (UINT i = 0; i < backbufferFrames; i++)
             {
@@ -3045,14 +3306,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 framebuffer[i] = nullptr;
             }
 
-            commandList->Release();
+            commandListPre->Release();
+            commandListPost->Release();
 
-#if MULTIPLE_COMMAND_ALLOCATORS
             for (UINT i = 0; i < backbufferFrames; i++)
                 commandAllocator[i]->Release();
-#else
-            commandAllocator[0]->Release();
-#endif
 
             fence->Release();
             commandQueue->Release();
