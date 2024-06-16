@@ -666,7 +666,7 @@ void InitD3D12(void)
 
     {
         char msg[32];
-        snprintf(msg, 32, "Node count == %d", device->GetNodeCount());
+        snprintf(msg, 32, "Node count == %d\n", device->GetNodeCount());
         OutputDebugStringA(msg);
     }
 
