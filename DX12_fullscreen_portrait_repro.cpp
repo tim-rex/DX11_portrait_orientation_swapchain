@@ -2019,8 +2019,6 @@ void InitShaders(void)
 
     }
 #endif
-
-
 }
 
 
@@ -2042,6 +2040,118 @@ float time_lerp(void)
     }
     return t;
 }
+
+
+
+void DrawLotsUnoptimised(ID3D12GraphicsCommandList* cmdList, UINT threadIndex, UINT numThreads)
+{
+    assert(threadIndex < numThreads);
+    // We cannot use RSSetViewports in a bundle, for shame
+    // So we do it here
+
+    // We'll split this into numThreads batches and operate solely on the threadIndex batch for this iteration
+    
+    // Now loop and create some artificial load
+    {
+        const int viewports_x = 110;
+        const int viewports_y = 110;
+
+        //const int viewports_x = 10;
+        //const int viewports_y = 10;
+
+
+        const int total_viewports = viewports_x * viewports_y;
+        const float per_batch = (float)total_viewports / numThreads;
+
+
+
+        const int this_batch_begin = per_batch * threadIndex;
+        const int this_batch_end = (per_batch * float(threadIndex + 1) ) - 1;
+
+        //char msg[1024];
+        //snprintf(msg, 1024, "threadId %d of %d threads. Total Viewports = %d. Per batch = %d.  Begin: %d  End: %d\n", threadIndex, numThreads, total_viewports, (int)per_batch, this_batch_begin, this_batch_end);
+        //OutputDebugStringA(msg);
+
+
+#if 1
+        // new way
+
+        float offset_x = (((float)window_width / viewports_x) * 0.5f);
+        float offset_y = (((float)window_height / viewports_y) * 0.5f);
+
+        for (int i = this_batch_begin; i <= this_batch_end; i++)
+        {
+            // Determine cell for this item
+            UINT cell_x = i % viewports_x;
+            UINT cell_y = i / viewports_x;
+
+            //char msg[1024];
+            //snprintf(msg, 1024, "viewport %d has cell x=%d  y=%d\n", i, cell_x, cell_y);
+            //OutputDebugStringA(msg);
+
+            {
+                // Set a viewport for this block
+                D3D12_VIEWPORT viewport1 = {
+                    .TopLeftX = (float)window_width / viewports_x * cell_x,
+                    .TopLeftY = (float)window_height / viewports_y * cell_y,
+                    .Width = (float)window_width / viewports_x,
+                    .Height = (float)window_height / viewports_y
+                };
+
+                cmdList->RSSetViewports(1, &viewport1);
+                cmdList->DrawInstanced(21, 1, 0, 0);   // 7 tri's
+
+
+                // An additional viewport, offset
+
+                D3D12_VIEWPORT viewport2 = {
+                    .TopLeftX = ((float)window_width / viewports_x * cell_x) + offset_x,
+                    .TopLeftY = ((float)window_height / viewports_y * cell_y) + offset_y,
+                    .Width = (float)window_width / viewports_x,
+                    .Height = (float)window_height / viewports_y
+                };
+
+                cmdList->RSSetViewports(1, &viewport2);
+                cmdList->DrawInstanced(21, 1, 0, 0);   // 7 tri's
+            }
+
+        }
+
+#else
+        // old way
+        for (int i = 0; i < viewports_x; i++)
+        {
+            for (int j = 0; j < viewports_y; j++)
+            {
+                // Set a viewport for this block
+                D3D12_VIEWPORT viewport1 = {
+                    .TopLeftX = (float)window_width / viewports_x * i,
+                    .TopLeftY = (float)window_height / viewports_y * j,
+                    .Width = (float)window_width / viewports_x,
+                    .Height = (float)window_height / viewports_y
+                };
+
+                cmdList->RSSetViewports(1, &viewport1);
+                cmdList->DrawInstanced(21, 1, 0, 0);   // 7 tri's
+
+
+                // An additional viewport, offset
+
+                D3D12_VIEWPORT viewport2 = {
+                    .TopLeftX = ((float)window_width / viewports_x * i) + (((float)window_width / viewports_x) * 0.5f),
+                    .TopLeftY = ((float)window_height / viewports_y * j) + (((float)window_height / viewports_y) * 0.5f),
+                    .Width = (float)window_width / viewports_x,
+                    .Height = (float)window_height / viewports_y
+                };
+
+                cmdList->RSSetViewports(1, &viewport2);
+                cmdList->DrawInstanced(21, 1, 0, 0);   // 7 tri's
+            }
+        }
+#endif
+    }
+}
+
 
 
 void PopulateCommandList(ID3D12GraphicsCommandList* commandList);
@@ -2264,52 +2374,9 @@ void render(void)
 
 
 #if DRAW_LOTS_UNOPTIMISED
-    // We cannot use RSSetViewports in a bundle, for shame
-    // So we do it here
-
-    // Now loop and create some artificial load
-    {
-        const int viewports_x = 100;
-        const int viewports_y = 100;
-
-        for (int i = 0; i < viewports_x; i++)
-        {
-            for (int j = 0; j < viewports_y; j++)
-            {
-                // Set a viewport for this block
-                D3D12_VIEWPORT viewport = {
-                    .TopLeftX = (float)window_width / viewports_x * i,
-                    .TopLeftY = (float)window_height / viewports_y * j,
-                    .Width = (float)window_width / viewports_x,
-                    .Height = (float)window_height / viewports_y
-                };
-
-                commandList->RSSetViewports(1, &viewport);
-                commandList->DrawInstanced(21, 1, 0, 0);   // 7 tri's
-            }
-        }
-
-        // And another layer, offset 50% in X and Y
-        for (int i = 0; i < viewports_x; i++)
-        {
-            for (int j = 0; j < viewports_y; j++)
-            {
-                // Set a viewport for this block
-                D3D12_VIEWPORT viewport = {
-                    .TopLeftX = ((float)window_width / viewports_x * i) + (((float)window_width / viewports_x) * 0.5f),
-                    .TopLeftY = ((float)window_height / viewports_y * j) + (((float)window_height / viewports_y) * 0.5f),
-                    .Width = (float)window_width / viewports_x,
-                    .Height = (float)window_height / viewports_y
-                };
-
-                commandList->RSSetViewports(1, &viewport);
-                commandList->DrawInstanced(21, 1, 0, 0);   // 7 tri's
-            }
-        }
-
-    }
-
-
+    const int numThreads = 5;
+    for (UINT i = 0; i < numThreads; i++)
+        DrawLotsUnoptimised(commandList, i, numThreads);
 #endif
 
 
