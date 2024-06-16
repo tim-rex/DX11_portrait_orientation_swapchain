@@ -637,7 +637,7 @@ void InitD3D12(void)
     }
 #else
 
-#define USE_WARP 1
+#define USE_WARP 0
 #if USE_WARP
     pFactory->EnumWarpAdapter(IID_PPV_ARGS(&dxgiAdapter));
 #else
