@@ -360,9 +360,8 @@ void dxgi_debug_post_device_init()
 
 #define USE_WARP 0
 
-#define MSAA_ENABLED 0
+#define MSAA_ENABLED 1
 #define ROOT_CONSTANTS_ENABLED 1
-
 #define DRAW_LOTS_UNOPTIMISED 1
 
 #define RENDER_THREADS 4
