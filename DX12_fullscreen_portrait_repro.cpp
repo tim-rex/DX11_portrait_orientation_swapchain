@@ -5,25 +5,26 @@
 #pragma comment( lib, "user32" )          // link against the win32 library
 #pragma comment( lib, "d3d12.lib" )
 #pragma comment( lib, "dxgi.lib" )        // directx graphics interface
-#pragma comment( lib, "dxcompiler.lib" ) // DX12 shader compiler
+#pragma comment( lib, "dxcompiler.lib" )  // DX12 shader compiler
 #pragma comment( lib, "dxguid.lib" )
 
-
 #include "framework.h"
-#include "DX12_fullscreen_portrait_repro.h"
 
 #include <d3d12.h>
 #include <dxgi1_6.h>
 
 #include <dxcapi.h> // DX12 shader compiler
 
-#include <dxgidebug.h>   // DXGI_INFO_QUEUE
+#include <dxgidebug.h>
 
 #include <assert.h>
 #include <vector>
 #include <inttypes.h>
-
 #include <process.h>
+
+#include "DX12_fullscreen_portrait_repro.h"
+
+
 
 #define ARRAY_COUNT(array) \
     (sizeof(array) / (sizeof(array[0]) * (sizeof(array) != sizeof(void *) || sizeof(array[0]) <= sizeof(void *))))
@@ -143,9 +144,6 @@ BOOL allowTearing = false;
 D3D12_FEATURE_DATA_SHADER_MODEL shaderModel = {};
 
 BOOL framechanged = false;
-
-
-
 
 
 void dxgi_debug_report()
@@ -356,22 +354,18 @@ void dxgi_debug_post_device_init()
         char msg[1024];
         snprintf(msg, 1024, "Max supported feature level : %x", levels.MaxSupportedFeatureLevel);
         OutputDebugStringA(msg);
-
     }
-   
-
 }
 
 
 
-#define MSAA_ENABLED 1
+#define MSAA_ENABLED 0
 #define BUNDLES_ENABLED 1
 #define ROOT_CONSTANTS_ENABLED 1
 
 #define DRAW_LOTS_UNOPTIMISED 1
 
-
-#define RENDER_THREADS 8
+#define RENDER_THREADS 4
 
 const int numThreads = RENDER_THREADS;
 
@@ -380,7 +374,6 @@ const UINT backbufferFrames = numFrames + 1;
 
 
 #if RENDER_THREADS
-
 struct ThreadParameter
 {
     int threadIndex;
@@ -455,7 +448,6 @@ ID3D12Resource2* framebuffer_MSAA[backbufferFrames] = {};
 #endif
 
 // We need a command allocater + command list
-
 
 ID3D12CommandAllocator* commandAllocator[backbufferFrames] = {};
 
@@ -1472,7 +1464,7 @@ void WaitForGPU(void)
     fence->SetEventOnCompletion(fenceValues[frameIndex], fenceEvent);
     WaitForSingleObjectEx(fenceEvent, INFINITE, FALSE);
 
-    // Increment the fence value for the current fram
+    // Increment the fence value for the current frame
     fenceValues[frameIndex]++;
 }
 
@@ -2241,10 +2233,6 @@ void render(void)
 {
     UINT frameIndex = swapchain4->GetCurrentBackBufferIndex();
 
-
-
-
-
 #if MSAA_ENABLED
     D3D12_CPU_DESCRIPTOR_HANDLE* rtvTarget = &rtvHandles_MSAA[frameIndex];
 #else
@@ -2253,8 +2241,8 @@ void render(void)
 
     // Now start rendering
 
-    // TODO: Is it correct / preferred to reset the command allocator every frame ??
-
+    // TODO: Consider at least one *additional* commandAllocator
+    // This may allow us to avoid 
 
     commandAllocator[frameIndex]->Reset();
     commandListPre->Reset(commandAllocator[frameIndex], pso);
