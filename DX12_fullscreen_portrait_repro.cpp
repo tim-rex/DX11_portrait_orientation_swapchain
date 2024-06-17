@@ -361,7 +361,6 @@ void dxgi_debug_post_device_init()
 #define USE_WARP 0
 
 #define MSAA_ENABLED 0
-#define BUNDLES_ENABLED 1
 #define ROOT_CONSTANTS_ENABLED 1
 
 #define DRAW_LOTS_UNOPTIMISED 1
@@ -480,11 +479,6 @@ D3D12_CONSTANT_BUFFER_VIEW_DESC constantBufferView;
 ID3D12GraphicsCommandList* commandListPre = nullptr;
 ID3D12GraphicsCommandList* commandListPost = nullptr;
 
-
-#if BUNDLES_ENABLED
-ID3D12CommandAllocator* bundleAllocator = {};
-ID3D12GraphicsCommandList* commandListBundle = nullptr;
-#endif
 
 ID3D12RootSignature* rootSig = nullptr;
 ID3D12PipelineState* pso = nullptr;
@@ -1327,22 +1321,6 @@ void InitD3D12(void)
     }
 
 
-#if BUNDLES_ENABLED
-    {
-        HRESULT result = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_BUNDLE, IID_PPV_ARGS(&bundleAllocator));
-
-        if (FAILED(result))
-        {
-            OutputDebugStringA("Failed to CreateCommandAllocator for bundleAllocator\n");
-            exit(EXIT_FAILURE);
-        }
-
-        bundleAllocator->SetName(L"bundle allocator");
-
-    }
-#endif
-
-
 #if RENDER_THREADS
     for (int i = 0; i < numThreads; i++)
     {
@@ -1416,21 +1394,6 @@ void InitD3D12(void)
 
 #endif
 
-
-#if BUNDLES_ENABLED
-    {
-        HRESULT result = device->CreateCommandList1(0, D3D12_COMMAND_LIST_TYPE_BUNDLE, D3D12_COMMAND_LIST_FLAG_NONE, IID_PPV_ARGS(&commandListBundle));
-
-        if (FAILED(result))
-        {
-            OutputDebugStringA("Failed to CreateCommandList1 Bundle\n");
-            exit(EXIT_FAILURE);
-        }
-        commandListBundle->SetName(L"commandListBundle");
-
-        // This command list is created in a closed state by default
-    }
-#endif
 
 
 #else
@@ -2120,9 +2083,6 @@ float time_lerp(void)
 void DrawLotsUnoptimised(ID3D12GraphicsCommandList* cmdList, UINT threadIndex, UINT numThreads)
 {
     assert(threadIndex < numThreads);
-    // We cannot use RSSetViewports in a bundle, for shame
-    // So we do it here
-
     // We'll split this into numThreads batches and operate solely on the threadIndex batch for this iteration
     
     // Now loop and create some artificial load
@@ -2445,16 +2405,8 @@ void render(void)
 #endif
 
 
-
-
-#if 1
-    // Populate the commandlist (or, if we're using bundles - use the bundle we made on init)
-#if BUNDLES_ENABLED
-    commandListPre->ExecuteBundle(commandListBundle);
-#else
+    // Populate the commandlist
     PopulateCommandList(commandListPre);
-#endif
-#endif
 
 
     commandListPre->Close();
@@ -2659,13 +2611,7 @@ void PopulateCommandList(ID3D12GraphicsCommandList *commandListOrBundle)
     }
 }
 
-void InitBundle()
 {
-#if BUNDLES_ENABLED
-    commandListBundle->Reset(bundleAllocator, pso);
-    PopulateCommandList(commandListBundle);
-    commandListBundle->Close();
-#endif
 }
 
 
@@ -2834,7 +2780,6 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
    InitD3D12();
    InitShaders();
-   InitBundle();
    InitThreads();
 
    ShowWindow(hWnd, nCmdShow);
