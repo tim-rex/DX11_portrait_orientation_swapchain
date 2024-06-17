@@ -358,6 +358,7 @@ void dxgi_debug_post_device_init()
 }
 
 
+#define USE_WARP 0
 
 #define MSAA_ENABLED 0
 #define BUNDLES_ENABLED 1
@@ -629,7 +630,6 @@ void InitD3D12(void)
     }
 #else
 
-#define USE_WARP 0
 #if USE_WARP
     pFactory->EnumWarpAdapter(IID_PPV_ARGS(&dxgiAdapter));
 #else
