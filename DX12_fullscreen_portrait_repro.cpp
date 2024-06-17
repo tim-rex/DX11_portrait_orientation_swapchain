@@ -2248,14 +2248,13 @@ void render(void)
     commandListPre->Reset(commandAllocator[frameIndex], pso);
 
 
+#if DRAW_LOTS_UNOPTIMISED && RENDER_THREADS
     for (int i = 0; i < numThreads; i++)
     {
         m_threadParameters[i].commandAllocator[frameIndex]->Reset();
         m_threadParameters[i].commandList->Reset(m_threadParameters[i].commandAllocator[frameIndex], pso);
     }
 
-
-#if DRAW_LOTS_UNOPTIMISED && RENDER_THREADS
     // Tell our render threads to kick into action
     // They'll use their own commandLists and we'll coalesce them later
 
@@ -2464,9 +2463,7 @@ void render(void)
 
 
 
-#if DRAW_LOTS_UNOPTIMISED
-
-#if RENDER_THREADS
+#if DRAW_LOTS_UNOPTIMISED && RENDER_THREADS
 
     // We need to coalesce and execute our render threads BEFORE the MSAA resolve
     // Wait for our render threads
@@ -2486,24 +2483,32 @@ void render(void)
     }
 
 
+#elif DRAW_LOTS_UNOPTIMISED && !RENDER_THREADS
+
+    commandListPost->Reset(commandAllocator[frameIndex], pso);
+
+    D3D12_VIEWPORT viewport = {
+            0.0f, 0.0f,   // X, Y
+            (FLOAT)window_width,
+            (FLOAT)window_height,
+            0.0f, 1.0f  // DepthMin, DepthMax
+        };
+    D3D12_RECT scissorRect = { 0, 0, (LONG)window_width, (LONG)window_height };
+
+    commandListPost->RSSetViewports(1, &viewport);
+    commandListPost->RSSetScissorRects(1, &scissorRect);
+
+    commandListPost->OMSetRenderTargets(1, rtvTarget, FALSE, nullptr);
+
+    PopulateCommandList(commandListPost);
+    DrawLotsUnoptimised(commandListPost, 0, 1);
 #else
-    // Simulate multiple threads, but really we're just using the current commandList on 1 thread
-    const int numThreads = 5;
-    for (UINT i = 0; i < numThreads; i++)
-        DrawLotsUnoptimised(commandListPost, i, numThreads);
+    commandListPost->Reset(commandAllocator[frameIndex], pso);
 #endif
-
-
-#endif
-
-
-    
 
     // Drawing complete
 
     // Perform the resolve
-
-    commandListPost->Reset(commandAllocator[frameIndex], pso);
 
 
 #if MSAA_ENABLED
