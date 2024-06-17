@@ -2186,8 +2186,9 @@ void DrawLotsUnoptimised(ID3D12GraphicsCommandList* cmdList, UINT threadIndex, U
 }
 
 
+void InitCommandListForDraw(ID3D12GraphicsCommandList*);
+void PopulateCommandList(ID3D12GraphicsCommandList*);
 
-void PopulateCommandList(ID3D12GraphicsCommandList* commandList);
 
 void render(void)
 {
@@ -2227,25 +2228,6 @@ void render(void)
     for (int i = 0; i < numThreads; i++)
         SetEvent(threadSignalBeginRenderFrame[i]);
 #endif
-
-    // Set the viewport
-    {
-        D3D12_VIEWPORT viewport = {
-            0.0f, 0.0f,   // X, Y
-            (FLOAT)window_width,
-            (FLOAT)window_height,
-            0.0f, 1.0f  // DepthMin, DepthMax
-        };
-        D3D12_RECT scissorRect = { 0, 0, (LONG)window_width, (LONG)window_height };
-
-        /*
-        char msg[1024];
-        snprintf(msg, 1024, "render time viewport dimensions %f x %f\n", viewport.Width, viewport.Height);
-        OutputDebugStringA(msg);
-        */
-        commandListPre->RSSetViewports(1, &viewport);
-        commandListPre->RSSetScissorRects(1, &scissorRect);
-    }
 
 
 
@@ -2288,6 +2270,9 @@ void render(void)
     }
 #endif
 
+
+
+    InitCommandListForDraw(commandListPre);
 
     // Set render targets
     {
@@ -2373,34 +2358,12 @@ void render(void)
     }
 
 
-#if ROOT_CONSTANTS_ENABLED
-    // Set the root signature before doing anything
-    commandListPre->SetGraphicsRootSignature(rootSig);
-
-    //if (framechanged)
-    if (1)
-    {
-        commandListPre->SetGraphicsRoot32BitConstants(0, 3, &VsConstData_dims, 0);
-    }
-#else
+#if !ROOT_CONSTANTS_ENABLED
     //if (framechanged)
     if (1)
     {
         assert(persistentlyMappedConstantBuffer);
         memcpy(persistentlyMappedConstantBuffer, &VsConstData_dims, sizeof(VsConstData_dims));
-    }
-
-    // Set descriptor heaps
-    {
-        // SetDescriptorHeaps can be called on a bundle, but the bundle descriptor heaps must match the calling 
-        // command list descriptor heap.
-        // For more information on bundle restrictions, refer to Creating and Recording Command Lists and Bundles.\
-            //
-            // So.. What's the point?!  Genuine question
-
-
-        ID3D12DescriptorHeap* ppHeaps[] = { cbvHeap };
-        commandListPre->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
     }
 #endif
 
@@ -2408,6 +2371,9 @@ void render(void)
     // Populate the commandlist
     PopulateCommandList(commandListPre);
 
+#if DRAW_LOTS_UNOPTIMISED && !RENDER_THREADS
+     DrawLotsUnoptimised(commandListPre, 0, 1);
+#endif
 
     commandListPre->Close();
     static ID3D12CommandList *commandListPreList[] = { commandListPre };
@@ -2433,34 +2399,13 @@ void render(void)
 
         commandQueue->ExecuteCommandLists(numThreads, ppCommandLists);
     }
-
-
-#elif DRAW_LOTS_UNOPTIMISED && !RENDER_THREADS
-
-    commandListPost->Reset(commandAllocator[frameIndex], pso);
-
-    D3D12_VIEWPORT viewport = {
-            0.0f, 0.0f,   // X, Y
-            (FLOAT)window_width,
-            (FLOAT)window_height,
-            0.0f, 1.0f  // DepthMin, DepthMax
-        };
-    D3D12_RECT scissorRect = { 0, 0, (LONG)window_width, (LONG)window_height };
-
-    commandListPost->RSSetViewports(1, &viewport);
-    commandListPost->RSSetScissorRects(1, &scissorRect);
-
-    commandListPost->OMSetRenderTargets(1, rtvTarget, FALSE, nullptr);
-
-    PopulateCommandList(commandListPost);
-    DrawLotsUnoptimised(commandListPost, 0, 1);
-#else
-    commandListPost->Reset(commandAllocator[frameIndex], pso);
 #endif
 
     // Drawing complete
 
     // Perform the resolve
+
+    commandListPost->Reset(commandAllocator[frameIndex], pso);
 
 
 #if MSAA_ENABLED
@@ -2575,44 +2520,53 @@ void render(void)
     WaitForGPU();
 }
 
-void PopulateCommandList(ID3D12GraphicsCommandList *commandListOrBundle)
+
+
+void InitCommandListForDraw(ID3D12GraphicsCommandList* commandList)
 {
-    // Bundleable commands
+    // We need to define state for individual command lists
+
+    // Set the root signature before doing anything
+    commandList->SetGraphicsRootSignature(rootSig);
+
+#if ROOT_CONSTANTS_ENABLED
+    //if (framechanged)
+    if (1)
     {
-
-
-        commandListOrBundle->SetGraphicsRootSignature(rootSig);
-
-        //if (framechanged)
-        if (1)
-        {
-            commandListOrBundle->SetGraphicsRoot32BitConstants(0, 3, &VsConstData_dims, 0);
-        }
-
-
-
-        {
-            // Ref: https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nn-d3d12-id3d12pipelinestate
-
-            static bool pso_changed = true;
-            if (pso_changed)
-            {
-                commandListOrBundle->SetPipelineState(pso);
-                pso_changed = false;
-            }
-
-            commandListOrBundle->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        }
-
-        // Draw something, we don't use vertex buffers - all the magic happens in the vertex shader
-        {
-            commandListOrBundle->DrawInstanced(21, 1, 0, 0);
-        }
+        commandList->SetGraphicsRoot32BitConstants(0, 3, &VsConstData_dims, 0);
     }
+#else
+
+    // Set descriptor heaps
+    {
+        ID3D12DescriptorHeap* ppHeaps[] = { cbvHeap };
+        commandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
+    }
+#endif
+
+
+    D3D12_VIEWPORT viewport = {
+        0.0f, 0.0f,   // X, Y
+        (FLOAT)window_width,
+        (FLOAT)window_height,
+        0.0f, 1.0f  // DepthMin, DepthMax
+    };
+    D3D12_RECT scissorRect = { 0, 0, (LONG)window_width, (LONG)window_height };
+
+    commandList->RSSetViewports(1, &viewport);
+    commandList->RSSetScissorRects(1, &scissorRect);
+
+    commandList->SetPipelineState(pso);
+    commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 }
 
+void PopulateCommandList(ID3D12GraphicsCommandList *commandList)
 {
+    // Draw something, we don't use vertex buffers - all the magic happens in the vertex shader
+    commandList->DrawInstanced(21, 1, 0, 0);
 }
+
+
 
 
 #if RENDER_THREADS
@@ -2641,36 +2595,8 @@ static unsigned int WINAPI RenderThread(LPVOID lpParameter)
         // Even if the preceding command list has already done so for this frame
         // Very annoying
 
+        InitCommandListForDraw(parameter->commandList);
 
-#if ROOT_CONSTANTS_ENABLED
-        parameter->commandList->SetGraphicsRootSignature(rootSig);
-
-        //if (framechanged)
-        if (1)
-        {
-            parameter->commandList->SetGraphicsRoot32BitConstants(0, 3, &VsConstData_dims, 0);
-        }
-#else
-        //if (framechanged)
-        if (1)
-        {
-            assert(persistentlyMappedConstantBuffer);
-            memcpy(persistentlyMappedConstantBuffer, &VsConstData_dims, sizeof(VsConstData_dims));
-        }
-
-        // Set descriptor heaps
-        {
-            // SetDescriptorHeaps can be called on a bundle, but the bundle descriptor heaps must match the calling 
-            // command list descriptor heap.
-            // For more information on bundle restrictions, refer to Creating and Recording Command Lists and Bundles.\
-                //
-                // So.. What's the point?!  Genuine question
-
-
-            ID3D12DescriptorHeap* ppHeaps[] = { cbvHeap };
-            commandListPre->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
-        }
-#endif
 
         // Set render targets
         {
