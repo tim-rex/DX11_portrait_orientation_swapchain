@@ -17,10 +17,10 @@
 
 #include <dxgidebug.h>
 
-#include <assert.h>
-#include <vector>
-#include <inttypes.h>
 #include <process.h>
+#include <vector>
+#include <assert.h>
+#include <inttypes.h>
 
 #include "DX12_fullscreen_portrait_repro.h"
 

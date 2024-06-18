@@ -17,11 +17,14 @@
 #include <d3d11_4.h>     // ID3D11Device5
 #include <dxgi1_6.h>     // CheckHardwareCompositionSupport
 
+#include <dxgidebug.h>   // DXGI_INFO_QUEUE
+
 #include "d3dcompiler.h"
 
-#include <dxgidebug.h>   // DXGI_INFO_QUEUE
-#include <assert.h>
+#include <process.h>
 #include <vector>
+#include <assert.h>
+#include <inttypes.h>
 
 
 #define ARRAY_COUNT(array) \
@@ -109,7 +112,7 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
 
 HWND hWnd;
 ID3D11Device5* device = nullptr;
-ID3D11DeviceContext1* device_context_11_x = nullptr;
+ID3D11DeviceContext4* device_context_11_x = nullptr;
 IDXGISwapChain1* swapchain = nullptr;
 ID3D11RenderTargetView* render_target_view = nullptr;
 ID3D11RenderTargetView* msaa_render_target_view = nullptr;
@@ -127,6 +130,26 @@ BOOL framechanged = false;
 
 #define MSAA_ENABLED 1
 #define DRAW_LOTS_UNOPTIMISED 1
+
+#define RENDER_THREADS 4
+
+const int numThreads = RENDER_THREADS;
+
+
+#if RENDER_THREADS
+struct ThreadParameter
+{
+    int threadIndex;
+    ID3D11DeviceContext4* deferredContext = nullptr;
+    ID3D11CommandList* commandList = nullptr;
+};
+
+ThreadParameter m_threadParameters[numThreads];
+
+HANDLE threadHandles[numThreads];
+HANDLE threadSignalBeginRenderFrame[numThreads];
+HANDLE threadSignalFinishRenderFrame[numThreads];
+#endif
 
 
 #if MSAA_ENABLED
@@ -152,6 +175,8 @@ UINT MSAA_Quality = 0;
 
 
 ID3D11Buffer* shaderConstantBuffer_dims = NULL;
+ID3D11VertexShader* vertex_shader_ptr = NULL;
+ID3D11PixelShader* pixel_shader_ptr = NULL;
 
 // Define the constant data used to communicate with shaders.
 struct VS_CONSTANT_BUFFER
@@ -298,7 +323,11 @@ void InitD3D11(void)
         D3D_FEATURE_LEVEL_11_0,
     };
 
-    UINT device_flags = D3D11_CREATE_DEVICE_SINGLETHREADED;
+    UINT device_flags = 0;
+
+#if !RENDER_THREADS
+    device_flags |= D3D11_CREATE_DEVICE_SINGLETHREADED;
+#endif
 
 #if defined( DEBUG ) || defined( _DEBUG )
     device_flags |= D3D11_CREATE_DEVICE_DEBUG;
@@ -438,11 +467,12 @@ void InitD3D11(void)
             exit(EXIT_FAILURE);
         }
 
+        
         result = device_context_11_0->QueryInterface(IID_PPV_ARGS(&device_context_11_x));
 
         if (FAILED(result))
         {
-            OutputDebugStringA("Failed to QueryInterface for ID3D11DeviceContext1 from ID3D11DeviceContext\n");
+            OutputDebugStringA("Failed to QueryInterface for ID3D11DeviceContext4 from ID3D11DeviceContext\n");
             exit(EXIT_FAILURE);
         }
 
@@ -450,9 +480,40 @@ void InitD3D11(void)
         device_context_11_0->Release();
         device_11_0->Release();
 
+
+#if RENDER_THREADS
+        {
+            // Check for support
+
+            for (int i = 0; i < numThreads; i++)
+            {
+                ID3D11DeviceContext* context = nullptr;
+                HRESULT result = device_11_0->CreateDeferredContext(0, &context);
+
+                if (FAILED(result))
+                {
+                    OutputDebugStringA("Failed to CreateDeferredContext for render thread\n");
+                    exit(EXIT_FAILURE);
+                }
+
+                // Promote to ID3D11DeviceContext4
+                result = context->QueryInterface(IID_PPV_ARGS(&m_threadParameters[i].deferredContext));
+
+                if (FAILED(result))
+                {
+                    OutputDebugStringA("Failed to promote ID3D11DeviceContext to ID3D11DeviceContext4\n");
+                    exit(EXIT_FAILURE);
+                }
+            }
+        }
+#endif
+
+
         device_context_11_0 = nullptr;
         device_11_0 = nullptr;
     }
+
+
 
 
 
@@ -1062,8 +1123,6 @@ void InitShaders(void)
     if (error_blob) error_blob->Release();
     error_blob = nullptr;
 
-    ID3D11VertexShader* vertex_shader_ptr = NULL;
-    ID3D11PixelShader* pixel_shader_ptr = NULL;
 
     hr = device->CreateVertexShader(
         vs_blob_ptr->GetBufferPointer(),
@@ -1159,8 +1218,91 @@ float time_lerp(void)
     return t;
 }
 
+
+
+
+
+void DrawLotsUnoptimised(ID3D11DeviceContext4* device, UINT threadIndex, UINT numThreads)
+{
+
+    assert(threadIndex < numThreads);
+    // We'll split this into numThreads batches and operate solely on the threadIndex batch for this iteration
+
+    device->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+    device->VSSetShader(vertex_shader_ptr, nullptr, 0);
+    device->PSSetShader(pixel_shader_ptr, nullptr, 0);
+
+
+    // Now loop and create some artificial load
+    {
+        const int viewports_x = 100;
+        const int viewports_y = 100;
+
+        const int total_viewports = viewports_x * viewports_y;
+        const float per_batch = (float)total_viewports / numThreads;
+
+        const int this_batch_begin = (int)(per_batch * threadIndex);
+        const int this_batch_end = ((int)(per_batch * float(threadIndex + 1))) - 1;
+
+        //char msg[1024];
+        //snprintf(msg, 1024, "threadId %d of %d threads. Total Viewports = %d. Per batch = %d.  Begin: %d  End: %d\n", threadIndex, numThreads, total_viewports, (int)per_batch, this_batch_begin, this_batch_end);
+        //OutputDebugStringA(msg);
+
+        float offset_x = (((float)window_width / viewports_x) * 0.5f);
+        float offset_y = (((float)window_height / viewports_y) * 0.5f);
+
+        for (int i = this_batch_begin; i <= this_batch_end; i++)
+        {
+            // Determine cell for this item
+            UINT cell_x = i % viewports_x;
+            UINT cell_y = i / viewports_x;
+
+            //char msg[1024];
+            //snprintf(msg, 1024, "viewport %d has cell x=%d  y=%d\n", i, cell_x, cell_y);
+            //OutputDebugStringA(msg);
+
+            {
+                // Set a viewport for this block
+                D3D11_VIEWPORT viewport1 = {
+                    .TopLeftX = (float)window_width / viewports_x * cell_x,
+                    .TopLeftY = (float)window_height / viewports_y * cell_y,
+                    .Width = (float)window_width / viewports_x,
+                    .Height = (float)window_height / viewports_y
+                };
+
+                device->RSSetViewports(1, &viewport1);
+                //device->DrawInstanced(21, 1, 0, 0);   // 7 tri's
+                device->Draw(21, 1);   // 7 tri's
+
+
+                // An additional viewport, offset
+
+                D3D11_VIEWPORT viewport2 = {
+                    .TopLeftX = ((float)window_width / viewports_x * cell_x) + offset_x,
+                    .TopLeftY = ((float)window_height / viewports_y * cell_y) + offset_y,
+                    .Width = (float)window_width / viewports_x,
+                    .Height = (float)window_height / viewports_y
+                };
+
+                device->RSSetViewports(1, &viewport2);
+                //device->DrawInstanced(21, 1, 0, 0);   // 7 tri's
+                device->Draw(21, 1);   // 7 tri's
+            }
+
+        }
+    }
+}
+
 void render(void)
 {
+
+#if DRAW_LOTS_UNOPTIMISED && RENDER_THREADS
+    // We need to coalesce and execute BEFORE the MSAA resolve
+    for (int i = 0; i < numThreads; i++)
+        SetEvent(threadSignalBeginRenderFrame[i]);
+#endif
+
 
 #if MSAA_ENABLED
     ID3D11RenderTargetView* target = msaa_render_target_view;
@@ -1308,49 +1450,28 @@ void render(void)
     //device_context_11_x->Draw(15, 0);   // 5 tri's
     device_context_11_x->Draw(21, 0);   // 7 tri's
 
+
 #if DRAW_LOTS_UNOPTIMISED
-    // Now loop and create some artificial load
+    
+#if RENDER_THREADS
+
+    // We need to coalesce and execute our render threads BEFORE the MSAA resolve
+    // Wait for our render threads
+    WaitForMultipleObjects(numThreads, threadSignalFinishRenderFrame, TRUE, INFINITE);
+
+    // Our thread generated commandLists are ready to execute
+
+    for (int i = 0; i < numThreads; i++)
     {
-        const int viewports_x = 100;
-        const int viewports_y = 100;
-
-        for (int i = 0; i < viewports_x; i++)
-        {
-            for (int j = 0; j < viewports_y; j++)
-            {
-                // Set a viewport for this block
-                D3D11_VIEWPORT viewport = {
-                    .TopLeftX = (float)window_width / viewports_x * i,
-                    .TopLeftY = (float)window_height / viewports_y * j,
-                    .Width = (float)window_width / viewports_x,
-                    .Height = (float)window_height / viewports_y
-                };
-
-                device_context_11_x->RSSetViewports(1, &viewport);
-                device_context_11_x->Draw(21, 0);   // 7 tri's
-            }
-        }
-
-        // And another layer, offset 50% in X and Y
-        for (int i = 0; i < viewports_x; i++)
-        {
-            for (int j = 0; j < viewports_y; j++)
-            {
-                // Set a viewport for this block
-                D3D11_VIEWPORT viewport = {
-                    .TopLeftX = ((float)window_width / viewports_x * i) + (((float)window_width / viewports_x) * 0.5f),
-                    .TopLeftY = ((float)window_height / viewports_y * j) + (((float)window_height / viewports_y) * 0.5f),
-                    .Width = (float)window_width / viewports_x,
-                    .Height = (float)window_height / viewports_y
-                };
-
-                device_context_11_x->RSSetViewports(1, &viewport);
-                device_context_11_x->Draw(21, 0);   // 7 tri's
-            }
-        }
+        // TODO: Confirm implications of restoreState
+        const bool restoreState = true;
+        device_context_11_x->ExecuteCommandList(m_threadParameters[i].commandList, restoreState);
     }
-#endif
 
+#else
+    DrawLotsUnoptimised(device_context_11_x, 0, 1);
+#endif
+#endif
 
     // Rendering is done, do the resolve
 
@@ -1389,6 +1510,80 @@ void render(void)
 }
 
 
+#if RENDER_THREADS
+static unsigned int WINAPI RenderThread(LPVOID lpParameter)
+{
+    ThreadParameter* parameter = (ThreadParameter*)lpParameter;
+    int threadIndex = parameter->threadIndex;
+
+    assert(threadIndex >= 0);
+    assert(threadIndex < numThreads);
+
+    while (threadIndex >= 0 && threadIndex < numThreads)
+    {
+        // Wait for the main thread to signal us
+
+        WaitForSingleObject(threadSignalBeginRenderFrame[threadIndex], INFINITE);
+
+        // Turns out we need to setup the root sig + render targets for EACH command list
+        // Even if the preceding command list has already done so for this frame
+        // Very annoying
+
+        //InitCommandListForDraw(parameter->commandList);
+
+        // Set render targets
+        {
+#if MSAA_ENABLED
+            parameter->deferredContext->OMSetRenderTargets(1, &msaa_render_target_view, nullptr);
+#else
+            parameter->deferredContext->OMSetRenderTargets(1, &render_target_view, nullptr);
+#endif
+        }
+
+
+
+        D3D11_RECT scissorRect = { 0, 0, (LONG)window_width, (LONG)window_height };
+        parameter->deferredContext->RSSetScissorRects(1, &scissorRect);
+
+        // Do some stuff
+        // Write to our own commandList
+        DrawLotsUnoptimised(parameter->deferredContext, threadIndex, numThreads);
+        // Close the command list
+
+        // TODO: Confirm implications of restoreState
+        const bool restoreState = true;
+        parameter->deferredContext->FinishCommandList(restoreState, &parameter->commandList);
+
+        // Tell the main thread we're done
+        SetEvent(threadSignalFinishRenderFrame[threadIndex]);
+    }
+
+    return 0;
+}
+#endif
+
+void InitThreads()
+{
+#if RENDER_THREADS
+    for (int i = 0; i < numThreads; i++)
+    {
+        // Initialise event handles
+
+        threadSignalBeginRenderFrame[i] = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+        threadSignalFinishRenderFrame[i] = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+
+        assert(threadSignalBeginRenderFrame[i]);
+        assert(threadSignalFinishRenderFrame[i]);
+
+        m_threadParameters[i].threadIndex = i;
+
+        threadHandles[i] = (HANDLE)_beginthreadex(nullptr, 0, &RenderThread, (LPVOID)&m_threadParameters[i], 0, nullptr);
+
+        assert(threadHandles[i]);
+    }
+#endif
+}
+
 DWORD windowStyle = WS_OVERLAPPEDWINDOW;
 
 BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
@@ -1405,6 +1600,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
    InitD3D11();
    InitShaders();
+   InitThreads();
 
    ShowWindow(hWnd, nCmdShow);
    UpdateWindow(hWnd);
