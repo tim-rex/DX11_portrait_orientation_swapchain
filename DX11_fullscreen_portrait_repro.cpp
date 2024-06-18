@@ -543,7 +543,14 @@ void InitD3D11(void)
              },
             .BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT,
             .BufferCount = 2,								// Needs to be >= 2 for FLIP swap effect
-            .Scaling = DXGI_SCALING_NONE,
+            .Scaling = DXGI_SCALING_STRETCH,
+
+                    // TODO: If we ever get internal rotation happening, we can go back to DXGI_SCALING_NONE without cause for concern
+
+                    // DXGI_SCALING_STRETCH is the default, and gives us correct output in the presence of portrait orientation swapchains
+                    // DXGI_SCALING_NONE has odd and IMHO undocumented or otherwise erroneous behaviour relating to portrait orientation fullscreen swapchains
+                    // DXGI_SCALING_ASPECT_RATIO_STRETCH is not supported with CreateSwapChainForHwnd
+
             .SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD,	// DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL
             .Flags = swapchain_flags,
         };
