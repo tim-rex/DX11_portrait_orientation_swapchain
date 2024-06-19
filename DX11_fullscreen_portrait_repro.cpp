@@ -130,6 +130,12 @@ BOOL framechanged = false;
 
 #define MSAA_ENABLED 1
 #define DRAW_LOTS_UNOPTIMISED 1
+#define DRAW_LOTS_OPTIMISED 0
+
+
+const int viewports_x = 100;
+const int viewports_y = 100;
+
 
 #define RENDER_THREADS 4
 
@@ -184,7 +190,15 @@ struct VS_CONSTANT_BUFFER
     float width;
     float height;
     float time;    // Buffer must be a multiple of 16 bytes
+#if DRAW_LOTS_OPTIMISED
+    uint32_t viewports_x;
+    uint32_t viewports_y;
+    float viewport_offset;
+    float _padding2;
+    float _padding3;
+#else
     float _padding1;
+#endif
 } VS_CONSTANT_BUFFER;
 
 struct VS_CONSTANT_BUFFER VsConstData_dims = {};
@@ -944,16 +958,30 @@ void InitShaders(void)
 {
     const char* shaderSource = R"(
 
+        float2 pixelCoordToNCD(float2 pixel);
+        struct vs_out vs_main(struct vs_in input);
+        struct ps_out ps_main(struct ps_in input);
+
         cbuffer ConstantBuffer : register( b0 ) {
             float width;
             float height;
             float time;
-            float padding1;
+#ifdef DRAW_LOTS_OPTIMISED
+            uint viewports_x;
+            uint viewports_y;
+            float viewport_offset;
+#else
+            float padding0;
+#endif
         };
 
         /* vertex attributes go here to input to the vertex shader */
         struct vs_in {
             uint vertexId : SV_VertexID;
+
+#ifdef DRAW_LOTS_OPTIMISED
+            uint instanceId: SV_InstanceID;
+#endif
         };
 
         /* outputs from vertex shader go here. can be interpolated to pixel shader */
@@ -1052,6 +1080,33 @@ void InitShaders(void)
               output.colour = float4(1.0, 1.0, time, 1.0);
           else
               output.colour = clamp(output.pos, 0, 1);
+
+
+#ifdef DRAW_LOTS_OPTIMISED
+          // Scale the output accordingly for this instanceId
+          // Based on the total defined X/Y cells, we'll determine the actual coordinate positions we're after
+          // Should be doable with a 2x2 matrix for X/Y translation + scale  
+          // For now, we'll do it naively
+
+          // Determine cell location base in instanceId
+
+          const int cell_x = input.instanceId % viewports_x;
+          const int cell_y = input.instanceId / viewports_x;
+
+          // Scale into 0-1 range
+          output.pos.x = ((output.pos.x + 1.0) / 2.0) * (1.0 / viewports_x);
+          output.pos.y = ((output.pos.y + 1.0) / 2.0) * (1.0 / viewports_y);
+
+          // Translate in 0-1 range + offset
+          output.pos.x = output.pos.x + ( (float)cell_x / (float) viewports_x) + ((1.0 / viewports_x) * viewport_offset);
+          output.pos.y = output.pos.y + ( (float)cell_y / (float) viewports_y) + ((1.0 / viewports_y) * viewport_offset);
+
+          // Scale back to -1 to -1
+          output.pos.x = (output.pos.x * 2.0) - 1;
+          output.pos.y = (output.pos.y * 2.0) - 1;
+        
+#endif
+
           return output;
         }
 
@@ -1079,12 +1134,24 @@ void InitShaders(void)
     flags |= D3DCOMPILE_DEBUG; // add more debug output
 #endif
 
+
+#if DRAW_LOTS_OPTIMISED
+    const D3D_SHADER_MACRO defines[] = {
+        { "DRAW_LOTS_OPTIMISED", "1" },
+        { nullptr, nullptr }
+    };
+    const D3D_SHADER_MACRO* pDefines = &defines[0];
+#else
+    const D3D_SHADER_MACRO * pDefines = nullptr;
+#endif
+
+
     ID3DBlob *vs_blob_ptr = nullptr;
     ID3DBlob *ps_blob_ptr = nullptr;
     ID3DBlob *error_blob = nullptr;
 
     HRESULT hr = 0;
-    hr = D3DCompile(shaderSource, strlen(shaderSource), "basic vertex shader", nullptr, nullptr,
+    hr = D3DCompile(shaderSource, strlen(shaderSource), "basic vertex shader", pDefines, nullptr,
         "vs_main",
         "vs_5_0",
         flags, 
@@ -1104,7 +1171,7 @@ void InitShaders(void)
     error_blob = nullptr;
 
 
-    hr = D3DCompile(shaderSource, strlen(shaderSource), "basic pixel shader", nullptr, nullptr,
+    hr = D3DCompile(shaderSource, strlen(shaderSource), "basic pixel shader", pDefines, nullptr,
         "ps_main",
         "ps_5_0",
         flags,
@@ -1236,9 +1303,6 @@ void DrawLotsUnoptimised(ID3D11DeviceContext4* device, UINT threadIndex, UINT nu
 
     // Now loop and create some artificial load
     {
-        const int viewports_x = 100;
-        const int viewports_y = 100;
-
         const int total_viewports = viewports_x * viewports_y;
         const float per_batch = (float)total_viewports / numThreads;
 
@@ -1430,6 +1494,11 @@ void render(void)
         VsConstData_dims.width = (float)window_width;
         VsConstData_dims.height = (float)window_height;
         VsConstData_dims.time = time_lerp();
+#if DRAW_LOTS_OPTIMISED
+        VsConstData_dims.viewports_x = 1;
+        VsConstData_dims.viewports_y = 1;
+        VsConstData_dims.viewport_offset = 0.0f;
+#endif
         framechanged = false;
 
         D3D11_MAPPED_SUBRESOURCE mappedResource;
@@ -1471,6 +1540,49 @@ void render(void)
 #else
     DrawLotsUnoptimised(device_context_11_x, 0, 1);
 #endif
+
+#elif DRAW_LOTS_OPTIMISED
+
+    // Set the viewports range
+    {
+        VsConstData_dims.viewports_x = viewports_x;
+        VsConstData_dims.viewports_y = viewports_y;
+        VsConstData_dims.viewport_offset = 0.0f;
+        D3D11_MAPPED_SUBRESOURCE mappedResource;
+
+        // Lock the constant buffer so it can be written to.
+        device_context_11_x->Map(shaderConstantBuffer_dims, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
+
+        // Get a pointer to the data in the constant buffer.
+        // TODO: This is suboptimal, we only need to copy the viewport dims, not the entire struct
+        memcpy(mappedResource.pData, &VsConstData_dims, sizeof(VsConstData_dims));
+
+        // Unlock the constant buffer.
+        device_context_11_x->Unmap(shaderConstantBuffer_dims, 0);
+    }
+
+    device_context_11_x->DrawInstanced(21, viewports_x * viewports_y, 0, 0);
+
+    // And draw again, with the offset
+    // Set the viewports range
+    {
+        VsConstData_dims.viewports_x = viewports_x;
+        VsConstData_dims.viewports_y = viewports_y;
+        VsConstData_dims.viewport_offset = 0.5f;
+        D3D11_MAPPED_SUBRESOURCE mappedResource;
+
+        // Lock the constant buffer so it can be written to.
+        device_context_11_x->Map(shaderConstantBuffer_dims, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
+
+        // Get a pointer to the data in the constant buffer.
+        // TODO: This is suboptimal, we only need to copy the viewport dims, not the entire struct
+        memcpy(mappedResource.pData, &VsConstData_dims, sizeof(VsConstData_dims));
+
+        // Unlock the constant buffer.
+        device_context_11_x->Unmap(shaderConstantBuffer_dims, 0);
+    }
+
+    device_context_11_x->DrawInstanced(21, viewports_x* viewports_y, 0, 0);
 #endif
 
     // Rendering is done, do the resolve

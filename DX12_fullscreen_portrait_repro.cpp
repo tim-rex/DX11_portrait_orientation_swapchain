@@ -362,7 +362,19 @@ void dxgi_debug_post_device_init()
 
 #define MSAA_ENABLED 1
 #define ROOT_CONSTANTS_ENABLED 1
-#define DRAW_LOTS_UNOPTIMISED 1
+#define DRAW_LOTS_UNOPTIMISED 0
+#define DRAW_LOTS_OPTIMISED 1
+
+// NOTE: DRAW_LOTS_OPTIMISED when ROOT_CONSTANTS_ENABLED=0 will utilise multiple (3) CBV buffers. 
+//       We switch buffers mid-frame between draw calls
+//       This is akin to switch root constants when ROOT_CONSTANTS_ENABLED=1
+//       We MAY want to test performance of using a single CBV and uploading between draw calls
+//       This would require using the UPLOAD heap and then COPY into the DEFAULT heap with appropriate resource synchronisation
+//       This is likely what our D3D11 equivalent is doing every time we map/unmap()
+
+const int viewports_x = 100;
+const int viewports_y = 100;
+
 
 #define RENDER_THREADS 4
 
@@ -390,13 +402,6 @@ HANDLE threadSignalFinishRenderFrame[numThreads];
 
 ID3D12CommandQueue* commandQueue = nullptr;
 ID3D12DescriptorHeap* rtvHeap = nullptr;
-
-#if !ROOT_CONSTANTS_ENABLED
-ID3D12DescriptorHeap* cbvHeap = nullptr;
-ID3D12Resource* constantBuffer = nullptr;
-
-#endif
-
 
 
 // vsync off
@@ -460,16 +465,32 @@ struct VS_CONSTANT_BUFFER
     float width;
     float height;
     float time;
+#if DRAW_LOTS_OPTIMISED
+    uint32_t viewports_x;
+    uint32_t viewports_y;
+    float viewport_offset;
+    float padding[58]; // Padding so the constant buffer is 256-byte aligned.
+#else
     float padding[61]; // Padding so the constant buffer is 256-byte aligned.
-} VS_CONSTANT_BUFFER;
+#endif
+};
 
 static_assert((sizeof(VS_CONSTANT_BUFFER) % 256) == 0, "Constant Buffer size must be 256-byte aligned");
 
-struct VS_CONSTANT_BUFFER VsConstData_dims = {};
+#if DRAW_LOTS_OPTIMISED
+const int numCBVHandles = 3;
+#else
+const int numCBVHandles = 1;
+#endif
+
+struct VS_CONSTANT_BUFFER VsConstData_dims[numCBVHandles] = {};
+
+D3D12_CPU_DESCRIPTOR_HANDLE cbvHandles[numCBVHandles];
 
 #if !ROOT_CONSTANTS_ENABLED
-uint8_t* persistentlyMappedConstantBuffer = nullptr;
-D3D12_CONSTANT_BUFFER_VIEW_DESC constantBufferView;
+ID3D12DescriptorHeap* cbvHeap = nullptr;
+uint8_t* persistentlyMappedConstantBuffer[numCBVHandles] = {};
+ID3D12Resource* constantBuffer[numCBVHandles] = {};
 #endif
 
 
@@ -543,7 +564,7 @@ D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc_MSAA = {
 #if !ROOT_CONSTANTS_ENABLED
 D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc = {
     .Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
-    .NumDescriptors = 1,
+    .NumDescriptors = numCBVHandles,
     .Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
     .NodeMask = 0
 };
@@ -926,7 +947,6 @@ void InitD3D12(void)
         device->CreateCommandQueue(&commandQueueDesc, IID_PPV_ARGS(&commandQueue));
         commandQueue->SetName(L"commandQueue");
     }
-        
 
     // Swapchain creation
     {
@@ -1206,7 +1226,6 @@ void InitD3D12(void)
             cbvHeap = nullptr;
 
             result = device->CreateDescriptorHeap(&cbvHeapDesc, IID_PPV_ARGS(&cbvHeap));
-            cbvHeap->SetName(L"rtvDescriptorHeap");
 
             if (FAILED(result))
             {
@@ -1369,14 +1388,25 @@ void InitShaders(void)
             float width;
             float height;
             float time;
-            //float padding0;
-            float padding1;
-        }
+#ifdef DRAW_LOTS_OPTIMISED
+            uint viewports_x;
+            uint viewports_y;
+            float viewport_offset;
+#else
+            float padding0;
+#endif
+        };
 
         /* vertex attributes go here to input to the vertex shader */
         struct vs_in {
             uint vertexId : SV_VertexID;
+
+#ifdef DRAW_LOTS_OPTIMISED
+            uint instanceId: SV_InstanceID;
+#endif
         };
+
+
 
         /* outputs from vertex shader go here. can be interpolated to pixel shader */
         struct vs_out {
@@ -1475,6 +1505,33 @@ void InitShaders(void)
               output.colour = float4(1.0, 1.0, time, 1.0);
           else
               output.colour = clamp(output.pos, 0, 1);
+
+
+#ifdef DRAW_LOTS_OPTIMISED
+          // Scale the output accordingly for this instanceId
+          // Based on the total defined X/Y cells, we'll determine the actual coordinate positions we're after
+          // Should be doable with a 2x2 matrix for X/Y translation + scale  
+          // For now, we'll do it naively
+
+          // Determine cell location base in instanceId
+
+          const int cell_x = input.instanceId % viewports_x;
+          const int cell_y = input.instanceId / viewports_x;
+
+          // Scale into 0-1 range
+          output.pos.x = ((output.pos.x + 1.0) / 2.0) * (1.0 / viewports_x);
+          output.pos.y = ((output.pos.y + 1.0) / 2.0) * (1.0 / viewports_y);
+
+          // Translate in 0-1 range + offset
+          output.pos.x = output.pos.x + ( (float)cell_x / (float) viewports_x) + ((1.0 / viewports_x) * viewport_offset);
+          output.pos.y = output.pos.y + ( (float)cell_y / (float) viewports_y) + ((1.0 / viewports_y) * viewport_offset);
+
+          // Scale back to -1 to -1
+          output.pos.x = (output.pos.x * 2.0) - 1;
+          output.pos.y = (output.pos.y * 2.0) - 1;
+        
+#endif
+
           return output;
         }
 
@@ -1511,16 +1568,6 @@ void InitShaders(void)
 
     IDxcUtils *utils = nullptr;
 
-    /*
-    hr = DxcCreateInstance(CLSID_DxcLibrary, IID_PPV_ARGS(&library));
-
-    if (FAILED(hr))
-    {
-        OutputDebugStringA("Failed to create Dxc library isntance\n");
-        exit(EXIT_FAILURE);
-    }
-    */
-
     
     hr = DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler));
 
@@ -1530,18 +1577,6 @@ void InitShaders(void)
         exit(EXIT_FAILURE);
     }
 
-    /*
-    uint32_t codePage = CP_UTF8;
-    
-    //hr = library->CreateBlobFromFile(L"PS.hlsl", &codePage, &sourceBlob);    
-    hr = library->CreateBlobWithEncodingOnHeapCopy(shaderSource, (uint32_t) strlen(shaderSource), codePage, &sourceBlob);
-
-    if (FAILED(hr))
-    {
-        OutputDebugStringA("Failed to create shader blob with encoding on heap copy\n");
-        exit(EXIT_FAILURE);
-    }
-    */
 
     hr = DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&utils));
 
@@ -1555,6 +1590,17 @@ void InitShaders(void)
 
     IDxcBlob* vs_code;
     IDxcBlob* ps_code;
+
+#if DRAW_LOTS_OPTIMISED
+    const DxcDefine defines[] = {
+        { L"DRAW_LOTS_OPTIMISED", L"1" }
+    };
+    const DxcDefine* pDefines = &defines[0];
+    const int numDefines = ARRAY_COUNT(defines);
+#else
+    const DxcDefine* pDefines = nullptr;
+    const int numDefines = 0;
+#endif
 
     {
         IDxcOperationResult* result;
@@ -1577,13 +1623,14 @@ void InitShaders(void)
         };
 
 
+
         hr = utils->BuildArguments(L"shader.hlsl",
             L"vs_main",
             L"vs_6_1",
-            arguments, // LPCWSTR * pArguments,
-            ARRAY_COUNT(arguments),       // UINT32           argCount,
-            nullptr, // const DxcDefine * pDefines,
-            0,       // UINT32           defineCount,
+            arguments,
+            ARRAY_COUNT(arguments),
+            pDefines,
+            numDefines, 
             &args
         );
 
@@ -1667,10 +1714,10 @@ void InitShaders(void)
         hr = utils->BuildArguments(L"shader.hlsl",
             L"ps_main",
             L"ps_6_1",
-            arguments, // LPCWSTR * pArguments,
-            ARRAY_COUNT(arguments),       // UINT32           argCount,
-            nullptr, // const DxcDefine * pDefines,
-            0,       // UINT32           defineCount,
+            arguments,
+            ARRAY_COUNT(arguments),
+            pDefines,
+            numDefines,
             &args
         );
 
@@ -1750,19 +1797,41 @@ void InitShaders(void)
 
 
 #if ROOT_CONSTANTS_ENABLED
-    D3D12_ROOT_PARAMETER1 params[] = {
+
+    D3D12_ROOT_PARAMETER params_1_0[] = {
+    {
+        .ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
+        .Constants = {
+            .ShaderRegister = 0,
+            .RegisterSpace = 0,
+#if DRAW_LOTS_OPTIMISED
+                .Num32BitValues = 6
+#else
+                .Num32BitValues = 3
+#endif
+            },
+            .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
+        }
+    };
+
+    D3D12_ROOT_PARAMETER1 params_1_1[] = {
         {
             .ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,            
             .Constants = {
                 .ShaderRegister = 0,
                 .RegisterSpace = 0,
+#if DRAW_LOTS_OPTIMISED
+                .Num32BitValues = 6
+#else
                 .Num32BitValues = 3
+#endif
             },
             .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
         }
     };
 #else
-    D3D12_ROOT_PARAMETER1 params[] = {
+
+    D3D12_ROOT_PARAMETER params_1_0[] = {
         {
             .ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV,
             /*
@@ -1772,22 +1841,68 @@ void InitShaders(void)
                 .Num32BitValues = 1
             },
             */
+            .Descriptor = {
+                .ShaderRegister = 0,
+                .RegisterSpace = 0,
+            },
             .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
         }
-        };
-#endif
+    };
 
-    //D3D12_ROOT_SIGNATURE_DESC rootSigDesc = {
-    D3D12_VERSIONED_ROOT_SIGNATURE_DESC rootSigDesc = {
-        .Version = D3D_ROOT_SIGNATURE_VERSION_1_1,
-        .Desc_1_1 = {
-            .NumParameters = ARRAY_COUNT(params),
-            .pParameters = params,
-            .NumStaticSamplers = 0,
-            .pStaticSamplers = nullptr,
-            .Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE
+    D3D12_ROOT_PARAMETER1 params_1_1[] = {
+        {
+            .ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV,
+            /*
+            .Constants = {
+                .ShaderRegister = 0,
+                .RegisterSpace = 0,
+                .Num32BitValues = 1
+            },
+            */
+            .Descriptor = {
+                .ShaderRegister = 0,
+                .RegisterSpace = 0,
+            },
+            .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
         }
     };
+#endif
+
+    D3D12_FEATURE_DATA_ROOT_SIGNATURE rootSignatureVersion = {};
+    hr = device->CheckFeatureSupport(D3D12_FEATURE_ROOT_SIGNATURE, &rootSignatureVersion, sizeof(rootSignatureVersion));
+    if (hr == E_INVALIDARG)
+        rootSignatureVersion.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
+
+    // NOTE: Curiously, Warp reports E_INVAILDARG despite actually working with a 1_1 signature (if we ignore the feature test)
+
+    D3D12_VERSIONED_ROOT_SIGNATURE_DESC rootSigDesc = {};
+
+    if (rootSignatureVersion.HighestVersion == D3D_ROOT_SIGNATURE_VERSION_1_0)
+    {
+        rootSigDesc = {
+            .Version = D3D_ROOT_SIGNATURE_VERSION_1_0,
+            .Desc_1_0 = {
+                .NumParameters = ARRAY_COUNT(params_1_0),
+                .pParameters = params_1_0,
+                .NumStaticSamplers = 0,
+                .pStaticSamplers = nullptr,
+                .Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE
+            }
+        };
+    }
+    else if (rootSignatureVersion.HighestVersion == D3D_ROOT_SIGNATURE_VERSION_1_1)
+    {
+        rootSigDesc = {
+            .Version = D3D_ROOT_SIGNATURE_VERSION_1_1,
+            .Desc_1_1 = {
+                .NumParameters = ARRAY_COUNT(params_1_1),
+                .pParameters = params_1_1,
+                .NumStaticSamplers = 0,
+                .pStaticSamplers = nullptr,
+                .Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE
+            }
+        };
+    }
 
 
     //hr = D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1_1, &rootSigBlob, &errorsBlob);
@@ -1812,7 +1927,8 @@ void InitShaders(void)
 
 
 
-    device->CreateRootSignature(0, rootSigBlob->GetBufferPointer(), rootSigBlob->GetBufferSize(), IID_PPV_ARGS(&rootSig));
+    hr = device->CreateRootSignature(0, rootSigBlob->GetBufferPointer(), rootSigBlob->GetBufferSize(), IID_PPV_ARGS(&rootSig));
+    assert(SUCCEEDED(hr));
     
     D3D12_RENDER_TARGET_BLEND_DESC renderTargetBlendStates = {
         .SrcBlend = D3D12_BLEND_ONE,
@@ -1863,16 +1979,11 @@ void InitShaders(void)
             },
         .Flags = D3D12_PIPELINE_STATE_FLAG_NONE
     };
-    
 
-/*
-#if defined( DEBUG ) || defined( _DEBUG )
-    // Only valid on WARP devices
-    .Flags = D3D12_PIPELINE_STATE_FLAG_TOOL_DEBUG
-#else
-    .Flags = 0
+#if USE_WARP && (defined( DEBUG ) || defined( _DEBUG ))
+    psoDesc.Flags |= D3D12_PIPELINE_STATE_FLAG_TOOL_DEBUG;
 #endif
-*/
+
 
     hr = device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pso));
 
@@ -1908,46 +2019,82 @@ void InitShaders(void)
         };
 
 
-        hr = device->CreateCommittedResource1(
-            &heapProperties,
-            heapFlags,
-            &resourceDesc,
-            D3D12_RESOURCE_STATE_GENERIC_READ,
-            nullptr,
-            nullptr,
-            IID_PPV_ARGS(&constantBuffer));
 
-        assert(SUCCEEDED(hr));
+        D3D12_CPU_DESCRIPTOR_HANDLE cbvHandle = cbvHeap->GetCPUDescriptorHandleForHeapStart();
+        const UINT incrementSize = device->GetDescriptorHandleIncrementSize(rtvHeapDesc.Type);
 
-        constantBuffer->SetName(L"constant buffer");
+        for (int i = 0; i < numCBVHandles; i++)
+        {
+            hr = device->CreateCommittedResource1(
+                &heapProperties,
+                heapFlags,
+                &resourceDesc,
+                D3D12_RESOURCE_STATE_GENERIC_READ,
+                nullptr,
+                nullptr,
+                IID_PPV_ARGS(&constantBuffer[i]));
 
+            assert(SUCCEEDED(hr));
 
-        constantBufferView = {
-            .BufferLocation = constantBuffer->GetGPUVirtualAddress(),
-            .SizeInBytes = (UINT) resourceDesc.Width
-        };
+            wchar_t name[32];
+            wsprintf(name, L"constant buffer %d", i);
+            constantBuffer[i]->SetName(name);
 
+            D3D12_CONSTANT_BUFFER_VIEW_DESC constantBufferView = {
+                .BufferLocation = constantBuffer[i]->GetGPUVirtualAddress(),
+                .SizeInBytes = (UINT)resourceDesc.Width
+            };
 
-        device->CreateConstantBufferView(&constantBufferView, cbvHeap->GetCPUDescriptorHandleForHeapStart());
+            cbvHandles[i] = cbvHandle;
+            device->CreateConstantBufferView(&constantBufferView, cbvHandles[i]);
+
+            cbvHandle.ptr += incrementSize;
+        }
 
         // Map and initialize the constant buffer.
         // We don't unmap this until the app closes.
         // Keeping things mapped for the lifetime of the resource is okay.
         // Ref: https://github.com/microsoft/DirectX-Graphics-Samples/blob/master/Samples/Desktop/D3D12HelloWorld/src/HelloConstBuffers/D3D12HelloConstBuffers.cpp
 
-        D3D12_RANGE readRange = { 0, 0 };
         
 #if 1
         // Just keep it permanently mapped
-        // TODO: Why is this ok?
+        // Why is this ok?
+        // https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nf-d3d12-id3d12resource-map
+        //
+        // Resources on CPU-accessible heaps can be persistently mapped, meaning Map can be called once, immediately 
+        // after resource creation. Unmap never needs to be called, but the address returned from Map must no 
+        // longer be used after the last reference to the resource is released. 
+        // 
+        // When using persistent map, the application must ensure the CPU finishes writing data into memory 
+        // before the GPU executes a command list that reads or writes the memory. In common scenarios, 
+        // the application merely must write to memory before calling ExecuteCommandLists; 
+        // but using a fence to delay command list execution works as well.
+        //
+        // All CPU-accessible memory types support persistent mapping usage, where the resource is mapped 
+        // but then never unmapped, provided the application does not access the pointer after the resource 
+        // has been disposed.
 
-        hr = constantBuffer->Map(0, &readRange, (void **)&persistentlyMappedConstantBuffer);
-        memcpy(persistentlyMappedConstantBuffer, &VsConstData_dims, sizeof(VsConstData_dims));
+
+        D3D12_RANGE readRange = { 0, 0 };
+        hr = constantBuffer[0]->Map(0, &readRange, (void**)&persistentlyMappedConstantBuffer[0]);
+        memcpy(persistentlyMappedConstantBuffer[0], &VsConstData_dims[0], sizeof(VS_CONSTANT_BUFFER));
+
+#if DRAW_LOTS_OPTIMISED
+        hr = constantBuffer[1]->Map(0, &readRange, (void**)&persistentlyMappedConstantBuffer[1]);
+        memcpy(persistentlyMappedConstantBuffer[1], &VsConstData_dims[1], sizeof(VS_CONSTANT_BUFFER));
+
+        hr = constantBuffer[2]->Map(0, &readRange, (void**)&persistentlyMappedConstantBuffer[2]);
+        memcpy(persistentlyMappedConstantBuffer[2], &VsConstData_dims[2], sizeof(VS_CONSTANT_BUFFER));
+#endif
+
 #else
-        uint8_t* destPtr;
-        hr = constantBuffer->Map(0, &readRange, (void**)&destPtr);
-        memcpy(destPtr, &VsConstData_dims, sizeof(VsConstData_dims));
-        constantBuffer->Unmap(0, sizeof(VsConstData_dims));
+        D3D12_RANGE readRange = { 0, 0 };
+        hr = constantBuffer->Map(0, &readRange, (void**)&persistentlyMappedConstantBuffer[0]);
+        memcpy(persistentlyMappedConstantBuffer[0], &VsConstData_dims, sizeof(VS_CONSTANT_BUFFER));
+
+        const D3D12_RANGE writtenRange = { 0, sizeof(VsConstData_dims) };
+        constantBuffer->Unmap(0, &writtenRange);
 #endif
 
     }
@@ -2203,9 +2350,14 @@ void render(void)
     if (1)
     {
         // Update constant data (frame dimensions, time)
-        VsConstData_dims.width = (float)window_width;
-        VsConstData_dims.height = (float)window_height;
-        VsConstData_dims.time = time_lerp();
+        VsConstData_dims[0].width = (float)window_width;
+        VsConstData_dims[0].height = (float)window_height;
+        VsConstData_dims[0].time = time_lerp();
+#if DRAW_LOTS_OPTIMISED
+        VsConstData_dims[0].viewports_x = 1;
+        VsConstData_dims[0].viewports_y = 1;
+        VsConstData_dims[0].viewport_offset = 0.0f;
+#endif
         framechanged = false;
     }
 
@@ -2214,17 +2366,98 @@ void render(void)
     //if (framechanged)
     if (1)
     {
-        assert(persistentlyMappedConstantBuffer);
-        memcpy(persistentlyMappedConstantBuffer, &VsConstData_dims, sizeof(VsConstData_dims));
+#if 1
+        assert(persistentlyMappedConstantBuffer[0]);
+        memcpy(persistentlyMappedConstantBuffer[0], &VsConstData_dims, sizeof(VS_CONSTANT_BUFFER));
+#else
+        D3D12_RANGE readRange = { 0, 0 };
+        HRESULT hr = constantBuffer->Map(0, &readRange, (void**)&persistentlyMappedConstantBuffer[0]);
+        memcpy(persistentlyMappedConstantBuffer[0], &VsConstData_dims, sizeof(VS_CONSTANT_BUFFER));
+
+        const D3D12_RANGE writtenRange = { 0, sizeof(VsConstData_dims) };
+        constantBuffer->Unmap(0, &writtenRange);
+#endif
     }
 #endif
 
+
+#if DRAW_LOTS_OPTIMISED && ROOT_CONSTANTS_ENABLED
+    commandListPre->SetGraphicsRoot32BitConstants(0, 6, &VsConstData_dims, 0);
+#endif
 
     // Populate the commandlist
     PopulateCommandList(commandListPre);
 
 #if DRAW_LOTS_UNOPTIMISED && !RENDER_THREADS
-     DrawLotsUnoptimised(commandListPre, 0, 1);
+    DrawLotsUnoptimised(commandListPre, 0, 1);
+#elif DRAW_LOTS_OPTIMISED && ROOT_CONSTANTS_ENABLED
+    {
+        // Set the viewports range
+        {
+            VsConstData_dims[0].viewports_x = viewports_x;
+            VsConstData_dims[0].viewports_y = viewports_y;
+            VsConstData_dims[0].viewport_offset = 0.0f;
+        }
+        commandListPre->SetGraphicsRoot32BitConstants(0, 6, &VsConstData_dims, 0);
+        commandListPre->DrawInstanced(21, viewports_x * viewports_y, 0, 0);
+
+        // And draw again, with the offset
+        // Set the viewports range
+        {
+            VsConstData_dims[2].viewports_x = viewports_x;
+            VsConstData_dims[2].viewports_y = viewports_y;
+            VsConstData_dims[2].viewport_offset = 0.5f;
+        }
+
+        commandListPre->SetGraphicsRoot32BitConstants(0, 6, &VsConstData_dims, 0);
+        commandListPre->DrawInstanced(21, viewports_x * viewports_y, 0, 0);
+    }
+#elif DRAW_LOTS_OPTIMISED && !ROOT_CONSTANTS_ENABLED
+    {
+        // IMPORTANT: We can't just queue up draw operations where they reference mapped buffers that 
+        // are changing mid-frame. We would need to execute the draw calls *around* the CBV value changes
+        // (not just queue them for later execution)
+        // 
+        // We could use multiple CBV's and switch them between draw calls
+        // This is what we've implemented here
+
+        // Alternatively, we could consider using CBV's that use GPU visible buffers only, and utilise
+        // a COPY between each update. That will introduce stalls, and would require that we
+        // implement uploads to UPLOAD heaps (as we do now) and then COPY to DEFAULT heaps alongside
+        // the requisite resource buffer transitions between each draw
+        // This may well be what D3D11 is doing behind the scenes (when the buffer is Unmap()'ed
+        
+        // Set the viewports range
+        {
+            memcpy(&VsConstData_dims[1], &VsConstData_dims[0], sizeof(VS_CONSTANT_BUFFER));
+            VsConstData_dims[1].viewports_x = viewports_x;
+            VsConstData_dims[1].viewports_y = viewports_y;
+            VsConstData_dims[1].viewport_offset = 0.0f;
+
+            // We need fences to marshal the buffer update from the *previous* draw call using this data
+
+            // TODO: This is suboptimal, we only need to copy the viewport dims, not the entire struct
+            memcpy(persistentlyMappedConstantBuffer[1], &VsConstData_dims[1], sizeof(VS_CONSTANT_BUFFER));
+        }
+        commandListPre->SetGraphicsRootConstantBufferView(0, constantBuffer[1]->GetGPUVirtualAddress());
+        commandListPre->DrawInstanced(21, viewports_x* viewports_y, 0, 0);
+
+        // And draw again, with the offset
+        // Set the viewports range
+        {
+            memcpy(&VsConstData_dims[2], &VsConstData_dims[0], sizeof(VS_CONSTANT_BUFFER));
+            VsConstData_dims[2].viewports_x = viewports_x;
+            VsConstData_dims[2].viewports_y = viewports_y;
+            VsConstData_dims[2].viewport_offset = 0.5f;
+
+            // TODO: This is suboptimal, we only need to copy the viewport dims, not the entire struct
+            memcpy(persistentlyMappedConstantBuffer[2], &VsConstData_dims[2], sizeof(VS_CONSTANT_BUFFER));
+        }
+
+        commandListPre->SetGraphicsRootConstantBufferView(0, constantBuffer[2]->GetGPUVirtualAddress());
+        commandListPre->DrawInstanced(21, viewports_x* viewports_y, 0, 0);
+
+    }
 #endif
 
     commandListPre->Close();
@@ -2382,7 +2615,13 @@ void InitCommandListForDraw(ID3D12GraphicsCommandList* commandList)
     commandList->SetGraphicsRootSignature(rootSig);
 
 #if ROOT_CONSTANTS_ENABLED
+
+#if DRAW_LOTS_OPTIMISED
+    commandList->SetGraphicsRoot32BitConstants(0, 6, &VsConstData_dims, 0);
+#else
     commandList->SetGraphicsRoot32BitConstants(0, 3, &VsConstData_dims, 0);
+#endif
+
 #else
 
     // Set descriptor heaps
@@ -2390,7 +2629,7 @@ void InitCommandListForDraw(ID3D12GraphicsCommandList* commandList)
         ID3D12DescriptorHeap* ppHeaps[] = { cbvHeap };
         commandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
     }
-    commandList->SetGraphicsRootConstantBufferView(0, constantBuffer->GetGPUVirtualAddress());
+    commandList->SetGraphicsRootConstantBufferView(0, constantBuffer[0]->GetGPUVirtualAddress());
 #endif
 
 
@@ -2422,7 +2661,6 @@ void PopulateCommandList(ID3D12GraphicsCommandList *commandList)
     // Draw something, we don't use vertex buffers - all the magic happens in the vertex shader
     commandList->DrawInstanced(21, 1, 0, 0);
 }
-
 
 
 
