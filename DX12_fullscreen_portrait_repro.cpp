@@ -1868,7 +1868,9 @@ void InitShaders(void)
     };
 #endif
 
-    D3D12_FEATURE_DATA_ROOT_SIGNATURE rootSignatureVersion = {};
+    D3D12_FEATURE_DATA_ROOT_SIGNATURE rootSignatureVersion = {
+        .HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1
+    };
     hr = device->CheckFeatureSupport(D3D12_FEATURE_ROOT_SIGNATURE, &rootSignatureVersion, sizeof(rootSignatureVersion));
     if (hr == E_INVALIDARG)
         rootSignatureVersion.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
