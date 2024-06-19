@@ -393,6 +393,8 @@ ID3D12DescriptorHeap* rtvHeap = nullptr;
 
 #if !ROOT_CONSTANTS_ENABLED
 ID3D12DescriptorHeap* cbvHeap = nullptr;
+ID3D12Resource* constantBuffer = nullptr;
+
 #endif
 
 
@@ -1884,8 +1886,6 @@ void InitShaders(void)
 #if !ROOT_CONSTANTS_ENABLED
     // Create a constant buffer (for framebuffer dimensions)
     {
-        ID3D12Resource *constantBuffer = nullptr;
-
         D3D12_HEAP_PROPERTIES heapProperties = {
             .Type = D3D12_HEAP_TYPE_UPLOAD
         };
@@ -1926,6 +1926,7 @@ void InitShaders(void)
             .BufferLocation = constantBuffer->GetGPUVirtualAddress(),
             .SizeInBytes = (UINT) resourceDesc.Width
         };
+
 
         device->CreateConstantBufferView(&constantBufferView, cbvHeap->GetCPUDescriptorHandleForHeapStart());
 
@@ -2389,6 +2390,7 @@ void InitCommandListForDraw(ID3D12GraphicsCommandList* commandList)
         ID3D12DescriptorHeap* ppHeaps[] = { cbvHeap };
         commandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
     }
+    commandList->SetGraphicsRootConstantBufferView(0, constantBuffer->GetGPUVirtualAddress());
 #endif
 
 
