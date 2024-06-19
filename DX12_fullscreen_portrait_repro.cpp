@@ -477,7 +477,7 @@ struct VS_CONSTANT_BUFFER
 
 static_assert((sizeof(VS_CONSTANT_BUFFER) % 256) == 0, "Constant Buffer size must be 256-byte aligned");
 
-#if DRAW_LOTS_OPTIMISED
+#if DRAW_LOTS_OPTIMISED && !ROOT_CONSTANTS_ENABLED
 const int numCBVHandles = 3;
 #else
 const int numCBVHandles = 1;
@@ -2130,9 +2130,6 @@ void DrawLotsUnoptimised(ID3D12GraphicsCommandList* cmdList, UINT threadIndex, U
     
     // Now loop and create some artificial load
     {
-        const int viewports_x = 100;
-        const int viewports_y = 100;
-
         const int total_viewports = viewports_x * viewports_y;
         const float per_batch = (float)total_viewports / numThreads;
 
@@ -2382,7 +2379,7 @@ void render(void)
 
 
 #if DRAW_LOTS_OPTIMISED && ROOT_CONSTANTS_ENABLED
-    commandListPre->SetGraphicsRoot32BitConstants(0, 6, &VsConstData_dims, 0);
+    commandListPre->SetGraphicsRoot32BitConstants(0, 6, &VsConstData_dims[0], 0);
 #endif
 
     // Populate the commandlist
@@ -2398,18 +2395,18 @@ void render(void)
             VsConstData_dims[0].viewports_y = viewports_y;
             VsConstData_dims[0].viewport_offset = 0.0f;
         }
-        commandListPre->SetGraphicsRoot32BitConstants(0, 6, &VsConstData_dims, 0);
+        commandListPre->SetGraphicsRoot32BitConstants(0, 6, &VsConstData_dims[0], 0);
         commandListPre->DrawInstanced(21, viewports_x * viewports_y, 0, 0);
 
         // And draw again, with the offset
         // Set the viewports range
         {
-            VsConstData_dims[2].viewports_x = viewports_x;
-            VsConstData_dims[2].viewports_y = viewports_y;
-            VsConstData_dims[2].viewport_offset = 0.5f;
+            VsConstData_dims[0].viewports_x = viewports_x;
+            VsConstData_dims[0].viewports_y = viewports_y;
+            VsConstData_dims[0].viewport_offset = 0.5f;
         }
 
-        commandListPre->SetGraphicsRoot32BitConstants(0, 6, &VsConstData_dims, 0);
+        commandListPre->SetGraphicsRoot32BitConstants(0, 6, &VsConstData_dims[0], 0);
         commandListPre->DrawInstanced(21, viewports_x * viewports_y, 0, 0);
     }
 #elif DRAW_LOTS_OPTIMISED && !ROOT_CONSTANTS_ENABLED
