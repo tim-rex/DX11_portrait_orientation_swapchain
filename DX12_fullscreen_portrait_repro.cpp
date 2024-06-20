@@ -393,7 +393,7 @@ struct ThreadParameter
 {
     int threadIndex;
     ID3D12CommandAllocator* commandAllocator[backbufferFrames] = {};
-    ID3D12GraphicsCommandList* commandList = nullptr;
+    ID3D12GraphicsCommandList1* commandList = nullptr;
 };
 
 ThreadParameter m_threadParameters[numThreads];
@@ -498,8 +498,8 @@ ID3D12Resource* constantBuffer[numCBVHandles] = {};
 #endif
 
 
-ID3D12GraphicsCommandList* commandListPre = nullptr;
-ID3D12GraphicsCommandList* commandListPost = nullptr;
+ID3D12GraphicsCommandList1* commandListPre = nullptr;
+ID3D12GraphicsCommandList1* commandListPost = nullptr;
 
 ID3D12RootSignature* rootSig = nullptr;
 ID3D12PipelineState* pso = nullptr;
@@ -2129,7 +2129,7 @@ float time_lerp(void)
 
 
 
-void DrawLotsUnoptimised(ID3D12GraphicsCommandList* cmdList, UINT threadIndex, UINT numThreads)
+void DrawLotsUnoptimised(ID3D12GraphicsCommandList1* cmdList, UINT threadIndex, UINT numThreads)
 {
     assert(threadIndex < numThreads);
     // We'll split this into numThreads batches and operate solely on the threadIndex batch for this iteration
