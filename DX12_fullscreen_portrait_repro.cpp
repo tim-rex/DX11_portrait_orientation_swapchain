@@ -2647,7 +2647,13 @@ void InitCommandListForDraw(ID3D12GraphicsCommandList* commandList)
     commandList->RSSetViewports(1, &viewport);
     commandList->RSSetScissorRects(1, &scissorRect);
 
-    commandList->SetPipelineState(pso);
+    // Ref: https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nn-d3d12-id3d12pipelinestate
+
+    // Piepeline state is (optionally) initialised on commandList->Reset(x, pso);
+    // Setting it here is redundant in that case
+
+    //commandList->SetPipelineState(pso);
+
     commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 
@@ -2700,20 +2706,6 @@ static unsigned int WINAPI RenderThread(LPVOID lpParameter)
 #endif
 
             parameter->commandList->OMSetRenderTargets(1, rtvTarget, FALSE, nullptr);
-        }
-
-
-        {
-            // Ref: https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nn-d3d12-id3d12pipelinestate
-
-            static bool pso_changed = true;
-            if (pso_changed)
-            {
-                parameter->commandList->SetPipelineState(pso);
-                pso_changed = false;
-            }
-
-            parameter->commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         }
 
 
