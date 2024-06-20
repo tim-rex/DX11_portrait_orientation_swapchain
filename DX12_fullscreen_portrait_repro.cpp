@@ -141,7 +141,7 @@ UINT window_width = 0;
 UINT window_height = 0;
 BOOL DXGI_fullscreen = false;
 BOOL allowTearing = false;
-D3D12_FEATURE_DATA_SHADER_MODEL shaderModel = {};
+
 
 BOOL framechanged = false;
 
@@ -317,10 +317,14 @@ void dxgi_debug_post_device_init()
 #endif
 
 
-    shaderModel.HighestShaderModel = D3D_HIGHEST_SHADER_MODEL;
+    D3D12_FEATURE_DATA_SHADER_MODEL shaderModel = {
+        .HighestShaderModel = D3D_HIGHEST_SHADER_MODEL
+    };
 
     while (device->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &shaderModel, sizeof(shaderModel)) == E_INVALIDARG)
     {
+        // When E_INVALIDARG, attempt to down-step
+
         if (shaderModel.HighestShaderModel == D3D_SHADER_MODEL_5_1)
         {
             OutputDebugStringA("Failed to check D3D12_FEATURE_SHADER_MODEL from highest down to to 5_1");
