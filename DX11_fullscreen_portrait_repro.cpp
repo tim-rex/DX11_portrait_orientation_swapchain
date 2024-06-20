@@ -959,8 +959,8 @@ void InitShaders(void)
     const char* shaderSource = R"(
 
         float2 pixelCoordToNCD(float2 pixel);
-        struct vs_out vs_main(struct vs_in input);
-        struct ps_out ps_main(struct ps_in input);
+        //struct vs_out vs_main(struct vs_in input);
+        //struct ps_out ps_main(struct ps_in input);
 
         cbuffer ConstantBuffer : register( b0 ) {
             float width;
