@@ -331,7 +331,7 @@ void dxgi_debug_post_device_init()
 
 #define USE_WARP 1
 
-#define USE_GPU_UPLOAD_HEAP 1
+#define USE_GPU_UPLOAD_HEAP 1  // TODO: Test performance delta (if any)
 #define MSAA_ENABLED 1
 #define ROOT_CONSTANTS_ENABLED 0
 #define DRAW_LOTS_UNOPTIMISED 0
