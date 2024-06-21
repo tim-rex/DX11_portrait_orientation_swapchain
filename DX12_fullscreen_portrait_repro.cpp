@@ -16,6 +16,7 @@
 #include <dxcapi.h> // DX12 shader compiler
 
 #include <dxgidebug.h>
+#include <pix3.h>   // Pix integration
 
 #include <process.h>
 #include <vector>
