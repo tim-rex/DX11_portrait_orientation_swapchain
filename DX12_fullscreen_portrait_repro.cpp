@@ -2117,11 +2117,28 @@ void InitShaders(void)
 #if !ROOT_CONSTANTS_ENABLED
     // Create a constant buffer (for framebuffer dimensions)
     {
+
+
         D3D12_HEAP_PROPERTIES heapProperties = {
             .Type = D3D12_HEAP_TYPE_UPLOAD
         };
 
+        if (GPUUploadHeapSupported)
+        {
+            heapProperties.Type = D3D12_HEAP_TYPE_GPU_UPLOAD;
+            heapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+            heapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+        }
+          
+
         D3D12_HEAP_FLAGS heapFlags = D3D12_HEAP_FLAG_NONE;
+
+        if (GPUUploadHeapSupported && ManualWriteTrackingResourceSupported)
+        {
+            // For Pix captures when using HEAP_TYPE_GPU_UPLOAD
+            heapFlags |= D3D12_HEAP_FLAG_TOOLS_USE_MANUAL_WRITE_TRACKING;
+        }
+
 
         D3D12_RESOURCE_DESC resourceDesc = {
             .Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
@@ -2172,13 +2189,26 @@ void InitShaders(void)
             cbvHandle.ptr += incrementSize;
         }
 
+        // Get the write trackers
+        if (GPUUploadHeapSupported && ManualWriteTrackingResourceSupported)
+        {
+            for (int i = 0; i < numCBVHandles; i++)
+            {
+                if (FAILED(constantBuffer[i]->QueryInterface(IID_PPV_ARGS(&cbvWriteTracking[i]))))
+                {
+                    OutputDebugStringA("Failed to query for ID3D12ManualWriteTrackingResource");
+                    ManualWriteTrackingResourceSupported = false;
+                    break;
+                }
+            }
+        }
+
         // Map and initialize the constant buffer.
         // We don't unmap this until the app closes.
         // Keeping things mapped for the lifetime of the resource is okay.
         // Ref: https://github.com/microsoft/DirectX-Graphics-Samples/blob/master/Samples/Desktop/D3D12HelloWorld/src/HelloConstBuffers/D3D12HelloConstBuffers.cpp
 
         
-#if 1
         // Just keep it permanently mapped
         // Why is this ok?
         // https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nf-d3d12-id3d12resource-map
@@ -2209,14 +2239,17 @@ void InitShaders(void)
         memcpy(persistentlyMappedConstantBuffer[2], &VsConstData_dims[2], sizeof(VS_CONSTANT_BUFFER));
 #endif
 
-#else
-        D3D12_RANGE readRange = { 0, 0 };
-        hr = constantBuffer->Map(0, &readRange, (void**)&persistentlyMappedConstantBuffer[0]);
-        memcpy(persistentlyMappedConstantBuffer[0], &VsConstData_dims, sizeof(VS_CONSTANT_BUFFER));
+        if (GPUUploadHeapSupported && ManualWriteTrackingResourceSupported)
+        {
+            // Tell Pix that we've written
+            // Ref: https://devblogs.microsoft.com/pix/pix-and-id3d12manualwritetrackingresource/
 
-        const D3D12_RANGE writtenRange = { 0, sizeof(VsConstData_dims) };
-        constantBuffer->Unmap(0, &writtenRange);
-#endif
+            for (int i = 0; i < numCBVHandles; i++)
+            {
+                const D3D12_RANGE writtenRange = { 0, sizeof(VS_CONSTANT_BUFFER) };
+                cbvWriteTracking[i]->TrackWrite(0, &writtenRange);
+            }
+        }
 
     }
 #endif
@@ -2484,17 +2517,17 @@ void render(void)
     //if (framechanged)
     if (1)
     {
-#if 1
         assert(persistentlyMappedConstantBuffer[0]);
         memcpy(persistentlyMappedConstantBuffer[0], &VsConstData_dims, sizeof(VS_CONSTANT_BUFFER));
-#else
-        D3D12_RANGE readRange = { 0, 0 };
-        HRESULT hr = constantBuffer->Map(0, &readRange, (void**)&persistentlyMappedConstantBuffer[0]);
-        memcpy(persistentlyMappedConstantBuffer[0], &VsConstData_dims, sizeof(VS_CONSTANT_BUFFER));
 
-        const D3D12_RANGE writtenRange = { 0, sizeof(VsConstData_dims) };
-        constantBuffer->Unmap(0, &writtenRange);
-#endif
+        if (GPUUploadHeapSupported && ManualWriteTrackingResourceSupported)
+        {
+            // Tell Pix that we've written
+            // Ref: https://devblogs.microsoft.com/pix/pix-and-id3d12manualwritetrackingresource/
+
+            const D3D12_RANGE writtenRange = { 0, sizeof(VS_CONSTANT_BUFFER) };
+            cbvWriteTracking[0]->TrackWrite(0, &writtenRange);
+        }
     }
 #endif
 
@@ -2556,6 +2589,16 @@ void render(void)
 
             // TODO: This is suboptimal, we only need to copy the viewport dims, not the entire struct
             memcpy(persistentlyMappedConstantBuffer[1], &VsConstData_dims[1], sizeof(VS_CONSTANT_BUFFER));
+
+            if (GPUUploadHeapSupported && ManualWriteTrackingResourceSupported)
+            {
+                // Tell Pix that we've written
+                // Ref: https://devblogs.microsoft.com/pix/pix-and-id3d12manualwritetrackingresource/
+
+                const D3D12_RANGE writtenRange = { 0, sizeof(VS_CONSTANT_BUFFER) };
+                cbvWriteTracking[1]->TrackWrite(0, &writtenRange);
+            }
+
         }
         commandListPre->SetGraphicsRootConstantBufferView(0, constantBuffer[1]->GetGPUVirtualAddress());
         commandListPre->DrawInstanced(21, viewports_x* viewports_y, 0, 0);
@@ -2570,6 +2613,15 @@ void render(void)
 
             // TODO: This is suboptimal, we only need to copy the viewport dims, not the entire struct
             memcpy(persistentlyMappedConstantBuffer[2], &VsConstData_dims[2], sizeof(VS_CONSTANT_BUFFER));
+
+            if (GPUUploadHeapSupported && ManualWriteTrackingResourceSupported)
+            {
+                // Tell Pix that we've written
+                // Ref: https://devblogs.microsoft.com/pix/pix-and-id3d12manualwritetrackingresource/
+
+                const D3D12_RANGE writtenRange = { 0, sizeof(VS_CONSTANT_BUFFER) };
+                cbvWriteTracking[2]->TrackWrite(0, &writtenRange);
+            }
         }
 
         commandListPre->SetGraphicsRootConstantBufferView(0, constantBuffer[2]->GetGPUVirtualAddress());
