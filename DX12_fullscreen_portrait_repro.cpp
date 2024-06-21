@@ -26,6 +26,16 @@
 
 
 
+#define USE_D3D_AGILITY_SDK 1
+#if USE_D3D_AGILITY_SDK
+// At time of writing, D3D12_SDK_VERSION == 614 == SDK 1.614.0
+extern "C" { __declspec(dllexport) extern const UINT D3D12SDKVersion = D3D12_SDK_VERSION; }
+
+//extern "C" { __declspec(dllexport) extern const char* D3D12SDKPath = u8".\\D3D12\\"; }
+extern "C" { __declspec(dllexport) extern const char* D3D12SDKPath = ".\\D3D12\\"; }
+#endif
+
+
 #define ARRAY_COUNT(array) \
     (sizeof(array) / (sizeof(array[0]) * (sizeof(array) != sizeof(void *) || sizeof(array[0]) <= sizeof(void *))))
 
@@ -1986,8 +1996,14 @@ void InitShaders(void)
         .Flags = D3D12_PIPELINE_STATE_FLAG_NONE
     };
 
-#if USE_WARP && (defined( DEBUG ) || defined( _DEBUG ))
+
+#if 0
+    // Ref: https://discord.com/channels/590611987420020747/590965902564917258/1253694592738394152
+    // It never did anything useful for anything except VSGD. Just don't use it
+
+#if USE_WARP && !USE_D3D_AGILITY_SDK && (defined( DEBUG ) || defined( _DEBUG ))
     psoDesc.Flags |= D3D12_PIPELINE_STATE_FLAG_TOOL_DEBUG;
+#endif
 #endif
 
 
@@ -2035,7 +2051,8 @@ void InitShaders(void)
                 &heapProperties,
                 heapFlags,
                 &resourceDesc,
-                D3D12_RESOURCE_STATE_GENERIC_READ,
+                //D3D12_RESOURCE_STATE_GENERIC_READ,
+                D3D12_RESOURCE_STATE_COMMON,    // Agility SDK warns about GENERIC_READ being ignored (Buffers are effectively created in state D3D12_RESOURCE_STATE_COMMON)
                 nullptr,
                 nullptr,
                 IID_PPV_ARGS(&constantBuffer[i]));
