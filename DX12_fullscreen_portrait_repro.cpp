@@ -326,59 +326,39 @@ void dxgi_debug_post_device_init()
 
     }
 #endif
-
-
-    D3D12_FEATURE_DATA_SHADER_MODEL shaderModel = {
-        .HighestShaderModel = D3D_HIGHEST_SHADER_MODEL
-    };
-
-    while (device->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &shaderModel, sizeof(shaderModel)) == E_INVALIDARG)
-    {
-        // When E_INVALIDARG, attempt to down-step
-
-        if (shaderModel.HighestShaderModel == D3D_SHADER_MODEL_5_1)
-        {
-            OutputDebugStringA("Failed to check D3D12_FEATURE_SHADER_MODEL from highest down to to 5_1");
-            exit(EXIT_FAILURE);
-        }
-        else if (shaderModel.HighestShaderModel == D3D_SHADER_MODEL_6_0)
-            shaderModel.HighestShaderModel = D3D_SHADER_MODEL_5_1;
-        else
-            shaderModel.HighestShaderModel = (D3D_SHADER_MODEL) (shaderModel.HighestShaderModel - 1);
-    }
-
-    {
-        char msg[1024];
-        snprintf(msg, 1024, "Highest available shader model : %x", shaderModel.HighestShaderModel);
-
-        if (shaderModel.HighestShaderModel >= D3D_SHADER_MODEL_6_1)
-            shaderModel.HighestShaderModel = D3D_SHADER_MODEL_6_1;
-        else
-        {
-            snprintf(msg, 1024, "Require shader model %x but only %x is available", D3D_SHADER_MODEL_6_1, shaderModel.HighestShaderModel);
-            OutputDebugStringA(msg);
-            exit(EXIT_FAILURE);
-        }
-    }
-
-    {
-        D3D12_FEATURE_DATA_FEATURE_LEVELS levels = {};
-
-        device->CheckFeatureSupport(D3D12_FEATURE_FEATURE_LEVELS, &levels, sizeof(levels));
-
-        char msg[1024];
-        snprintf(msg, 1024, "Max supported feature level : %x", levels.MaxSupportedFeatureLevel);
-        OutputDebugStringA(msg);
-    }
 }
 
 
-#define USE_WARP 0
+#define USE_WARP 1
 
+#define USE_GPU_UPLOAD_HEAP 1
 #define MSAA_ENABLED 1
-#define ROOT_CONSTANTS_ENABLED 1
+#define ROOT_CONSTANTS_ENABLED 0
 #define DRAW_LOTS_UNOPTIMISED 0
 #define DRAW_LOTS_OPTIMISED 1
+
+
+bool GPUUploadHeapSupported = false; // Requires Agility SDK
+bool ManualWriteTrackingResourceSupported = false;
+
+
+#if USE_GPU_UPLOAD_HEAP
+// Ref: https://microsoft.github.io/DirectX-Specs/d3d/D3D12GPUUploadHeaps.html#how-to-use-this-feature
+// How to use this feature
+// 
+// 1. Make sure GPUUploadHeapSupported is true after CheckFeatureSupport.
+// 
+// 2. Create a resource with D3D12_HEAP_TYPE_GPU_UPLOAD, then set CPUPageProperty as D3D12_CPU_PAGE_PROPERTY_UNKNOWN and set MemoryPoolPreference as D3D12_MEMORY_POOL_UNKNOWN.
+//    (OR Create a resource with D3D12_HEAP_TYPE_CUSTOM, then get CPUPageProperty and MemoryPoolPreference from GetCustomHeapProperties.)
+// 3. Use Map to get a CPU pointer to the specified subresource in the resource.
+// 
+// 4. Upload CPU data to the resource.
+//    (If using Pix) Use TrackWrite to notify tools like Pix about modifications of the resource.
+// 
+// 5. Use the resource directly, you do not necessarily need to copy the resource to another resource with a default heap.
+#endif
+
+
 
 // NOTE: DRAW_LOTS_OPTIMISED when ROOT_CONSTANTS_ENABLED=0 will utilise multiple (3) CBV buffers. 
 //       We switch buffers mid-frame between draw calls
@@ -501,6 +481,8 @@ const int numCBVHandles = 1;
 struct VS_CONSTANT_BUFFER VsConstData_dims[numCBVHandles] = {};
 
 D3D12_CPU_DESCRIPTOR_HANDLE cbvHandles[numCBVHandles];
+ID3D12ManualWriteTrackingResource* cbvWriteTracking[numCBVHandles];
+
 
 #if !ROOT_CONSTANTS_ENABLED
 ID3D12DescriptorHeap* cbvHeap = nullptr;
@@ -585,6 +567,104 @@ D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc = {
 };
 #endif
 
+
+
+void CheckFeatures(void)
+{
+
+    D3D12_FEATURE_DATA_SHADER_MODEL shaderModel = {
+        .HighestShaderModel = D3D_HIGHEST_SHADER_MODEL
+    };
+
+    while (device->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &shaderModel, sizeof(shaderModel)) == E_INVALIDARG)
+    {
+        // When E_INVALIDARG, attempt to down-step
+
+        if (shaderModel.HighestShaderModel == D3D_SHADER_MODEL_5_1)
+        {
+            OutputDebugStringA("Failed to check D3D12_FEATURE_SHADER_MODEL from highest down to to 5_1");
+            exit(EXIT_FAILURE);
+        }
+        else if (shaderModel.HighestShaderModel == D3D_SHADER_MODEL_6_0)
+            shaderModel.HighestShaderModel = D3D_SHADER_MODEL_5_1;
+        else
+            shaderModel.HighestShaderModel = (D3D_SHADER_MODEL)(shaderModel.HighestShaderModel - 1);
+    }
+
+    {
+        char msg[1024];
+        snprintf(msg, 1024, "Highest available shader model : %x", shaderModel.HighestShaderModel);
+
+        if (shaderModel.HighestShaderModel >= D3D_SHADER_MODEL_6_1)
+            shaderModel.HighestShaderModel = D3D_SHADER_MODEL_6_1;
+        else
+        {
+            snprintf(msg, 1024, "Require shader model %x but only %x is available", D3D_SHADER_MODEL_6_1, shaderModel.HighestShaderModel);
+            OutputDebugStringA(msg);
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    {
+        D3D12_FEATURE_DATA_FEATURE_LEVELS levels = {};
+
+        device->CheckFeatureSupport(D3D12_FEATURE_FEATURE_LEVELS, &levels, sizeof(levels));
+
+        char msg[1024];
+        snprintf(msg, 1024, "Max supported feature level : %x", levels.MaxSupportedFeatureLevel);
+        OutputDebugStringA(msg);
+    }
+
+    // Check for GPU_UPLOAD heap support
+    {
+#if USE_GPU_UPLOAD_HEAP
+        D3D12_FEATURE_DATA_D3D12_OPTIONS16 options16 = {};
+        D3D12_FEATURE_DATA_D3D12_OPTIONS17 options17 = {};
+
+        if (SUCCEEDED(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS16, &options16, sizeof(options16))))
+            GPUUploadHeapSupported = options16.GPUUploadHeapSupported;
+        else
+            OutputDebugStringA("Failed to query D3D12_FEATURE_D3D12_OPTIONS16. Is the Agility SDK properly configured?\n");
+
+        if (GPUUploadHeapSupported)
+        {
+            if (SUCCEEDED(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS17, &options17, sizeof(options17))))
+                ManualWriteTrackingResourceSupported = options17.ManualWriteTrackingResourceSupported;
+            else
+                OutputDebugStringA("Failed to query D3D12_FEATURE_D3D12_OPTIONS17. Is the Agility SDK properly configured?\n");
+        }
+
+        if (ManualWriteTrackingResourceSupported)
+        {
+
+        }
+#endif
+
+        /*
+        * Use CheckFeatureSupport to see if GPU upload heaps are supported on current device. 
+          We’ll return a struct with the following value:
+
+            bool GPUUploadHeapSupported - whether GPU upload heaps are supported on current device
+            GPUUploadHeapSupported is in D3D12_FEATURE_D3D12_OPTIONS16.
+
+            GPU upload heaps can be used only if GPUUploadHeapSupported is true. GPU upload heaps creation will fail if they are not supported.
+
+            D3D12_FEATURE_DATA_D3D12_OPTIONS16 options16 = {};
+            bool GPUUploadHeapSupported = false;
+            if(SUCCEEDED(pDevice->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS16, &options16, sizeof(options16))))
+            {
+                GPUUploadHeapSupported = options16.GPUUploadHeapSupported;
+            }
+            IDXGIAdapter3::QueryVideoMemoryInfo can be used to query the video memory budget, available CPU visible video memory size is the same as local video memory budget when the entire VRAM is CPU visible. When querying video memory budget for GPU upload heaps, MemorySegmentGroup needs to be DXGI_MEMORY_SEGMENT_GROUP_LOCAL. Then it’s developers’ responsibility to decide if they want to use GPU upload heaps. If they go over budget, we may have to fall back to system memory, which can lead to performance regression.
+
+            DXGI_QUERY_VIDEO_MEMORY_INFO VMInfo;
+            VERIFY_SUCCEEDED(spAdapter->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &VMInfo));
+
+
+        */
+    }
+
+}
 
 void InitD3D12(void)
 {
@@ -2782,6 +2862,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    }
 
    InitD3D12();
+   CheckFeatures();
    InitShaders();
    InitThreads();
 
