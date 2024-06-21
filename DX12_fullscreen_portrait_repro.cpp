@@ -778,6 +778,23 @@ void InitD3D12(void)
         OutputDebugStringA(msg);
     }
 
+
+    DXGI_QUERY_VIDEO_MEMORY_INFO VMInfo;
+    if SUCCEEDED(dxgiAdapter->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &VMInfo))
+    {
+        char msg[1024];
+        snprintf(msg, 1024, "Video Memory Info (MB)\n Budget: %" PRIu64 "\n CurrentUsage : %" PRIu64 "\n AvailableForReservation % " PRIu64 "\n CurrentReservation : %" PRIu64 "\n",
+            VMInfo.Budget / 1024 / 1024,
+            VMInfo.CurrentUsage / 1024 / 1024,
+            VMInfo.AvailableForReservation / 1024 / 1024,
+            VMInfo.CurrentReservation / 1024 / 1024);
+        OutputDebugStringA(msg);
+    }
+    else
+    {
+        OutputDebugStringA("Failed to QueryVideoMemoryInfo");
+    }
+
     dxgi_debug_post_device_init();
 
 
