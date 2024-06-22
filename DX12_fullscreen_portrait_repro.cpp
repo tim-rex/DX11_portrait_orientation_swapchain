@@ -339,7 +339,7 @@ void dxgi_debug_post_device_init()
 
 
 bool GPUUploadHeapSupported = false; // Requires Agility SDK
-bool ManualWriteTrackingResourceSupported = false;
+bool ManualWriteTrackingResourceSupported = false;  // Pix to more easily track resources when using GPU_UPLOAD heap
 
 
 #if USE_GPU_UPLOAD_HEAP
