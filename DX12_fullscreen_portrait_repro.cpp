@@ -2158,7 +2158,7 @@ void InitShaders(void)
 
 
         D3D12_CPU_DESCRIPTOR_HANDLE cbvHandle = cbvHeap->GetCPUDescriptorHandleForHeapStart();
-        const UINT incrementSize = device->GetDescriptorHandleIncrementSize(rtvHeapDesc.Type);
+        const UINT incrementSize = device->GetDescriptorHandleIncrementSize(cbvHeapDesc.Type);
 
         for (int i = 0; i < numCBVHandles; i++)
         {
