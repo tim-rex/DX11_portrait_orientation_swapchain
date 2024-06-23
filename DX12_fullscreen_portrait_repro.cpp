@@ -671,13 +671,13 @@ void CheckFeatures(void)
     }
 
     {
-        debug_printf("Highest available shader model : %x", shaderModel.HighestShaderModel);
+        debug_printf("Highest available shader model : %x\n", shaderModel.HighestShaderModel);
 
         if (shaderModel.HighestShaderModel >= D3D_SHADER_MODEL_6_1)
             shaderModel.HighestShaderModel = D3D_SHADER_MODEL_6_1;
         else
         {
-            debug_printf("Require shader model %x but only %x is available", D3D_SHADER_MODEL_6_1, shaderModel.HighestShaderModel);
+            debug_printf("Require shader model %x but only %x is available\n", D3D_SHADER_MODEL_6_1, shaderModel.HighestShaderModel);
             exit(EXIT_FAILURE);
         }
     }
@@ -685,7 +685,7 @@ void CheckFeatures(void)
     {
         D3D12_FEATURE_DATA_FEATURE_LEVELS levels = {};
         device->CheckFeatureSupport(D3D12_FEATURE_FEATURE_LEVELS, &levels, sizeof(levels));
-        debug_printf("Max supported feature level : %x", levels.MaxSupportedFeatureLevel);
+        debug_printf("Max supported feature level : %x\n", levels.MaxSupportedFeatureLevel);
     }
 
     // Check for GPU_UPLOAD heap support
@@ -944,7 +944,7 @@ void InitD3D12(void)
     }
     else
     {
-        debug_printf("Failed to QueryVideoMemoryInfo");
+        debug_printf("Failed to QueryVideoMemoryInfo\n");
     }
 
     dxgi_debug_post_device_init();
@@ -1469,7 +1469,7 @@ void InitD3D12(void)
 
             if (fenceEvent == nullptr)
             {
-                debug_printf("Failed to create fence event");
+                debug_printf("Failed to create fence event\n");
                 exit(EXIT_FAILURE);
             }            
         }

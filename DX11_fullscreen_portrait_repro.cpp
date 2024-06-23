@@ -712,7 +712,7 @@ void InitD3D11(void)
             VMInfo.CurrentReservation / 1024 / 1024);
     }
     else
-        debug_printf("Failed to QueryVideoMemoryInfo");
+        debug_printf("Failed to QueryVideoMemoryInfo\n");
 
 
     dxgi_debug_init();
@@ -916,7 +916,7 @@ void InitD3D11(void)
         HRESULT hr = device->CheckMultisampleQualityLevels1(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, sampleCount, 0, &sampleCountQuality[i]);
         if (FAILED(hr))
         {
-            debug_printf("Failed to determine Multisample quality level");
+            debug_printf("Failed to determine Multisample quality level\n");
             exit(EXIT_FAILURE);
         }
 
@@ -1408,7 +1408,7 @@ void InitShaders(void)
 
         if (FAILED(hr))
         {
-            debug_printf("Failed to create constant buffer");
+            debug_printf("Failed to create constant buffer\n");
             exit(EXIT_FAILURE);
         }
     }
