@@ -66,6 +66,44 @@
     (sizeof(array) / (sizeof(array[0]) * (sizeof(array) != sizeof(void *) || sizeof(array[0]) <= sizeof(void *))))
 
 
+void debug_printf(const char* __restrict format, ...)
+{
+    if (format == nullptr || strlen(format) == 0)
+        return;
+
+    const int buffsize = 16384;
+
+    // NOT THREAD SAFE
+    static char buffer[buffsize] = {};
+
+    va_list argptr;
+    va_start(argptr, format);
+    int bytes_needed = _vsnprintf_s(buffer, buffsize, format, argptr);
+    va_end(argptr);
+
+    OutputDebugStringA(buffer);
+}
+
+void debug_printf(const wchar_t* __restrict format, ...)
+{
+    if (format == nullptr || wcslen(format) == 0)
+        return;
+
+    const int buffsize = 8192;
+
+    // NOT THREAD SAFE
+    static wchar_t buffer[buffsize] = {};
+
+    va_list argptr;
+    va_start(argptr, format);
+
+    int bytes_needed = _vsnwprintf_s(buffer, buffsize, format, argptr);
+    va_end(argptr);
+
+    OutputDebugStringW(buffer);
+}
+
+
 #define MAX_LOADSTRING 100
 
 // Global Variables:
@@ -163,7 +201,7 @@ BOOL allowTearing = false;
 BOOL framechanged = false;
 
 
-#define MSAA_ENABLED 1
+#define MSAA_ENABLED 0
 #define DRAW_LOTS_UNOPTIMISED 1
 #define DRAW_LOTS_OPTIMISED 0
 
@@ -332,7 +370,7 @@ void dxgi_debug_init()
 
 
             // NOTE: ApplicationMessage will not let us break
-            //OutputDebugStringA("This will not trigger??? Why?\n");
+            //debug_printf("This will not trigger??? Why?\n");
             //info->AddApplicationMessage(DXGI_INFO_QUEUE_MESSAGE_SEVERITY_ERROR, "TEST");
 
             // NOTE: Result message will let us break
@@ -438,7 +476,7 @@ void InitD3D11(void)
         DXGI_ADAPTER_DESC1 adapterDesc1;
         adapter->GetDesc1(&adapterDesc1);
 
-        OutputDebugStringW(adapterDesc1.Description);
+        debug_printf(adapterDesc1.Description);
 
         if (wcscmp(adapterDesc1.Description, L"Radeon RX 580 Series") == 0)
             continue;
@@ -482,7 +520,7 @@ void InitD3D11(void)
 
         if (result == E_INVALIDARG)
         {
-            OutputDebugStringA("Direct3D 11_1 device not available, trying again for 11_0\n");
+            debug_printf("Direct3D 11_1 device not available, trying again for 11_0\n");
 
             // https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-d3d11createdeviceandswapchain
             //    If you provide a D3D_FEATURE_LEVEL array that contains D3D_FEATURE_LEVEL_11_1 on a computer 
@@ -504,7 +542,7 @@ void InitD3D11(void)
 
         if (FAILED(result))
         {
-            OutputDebugStringA("Failed D3D11CreateDevice\n");
+            debug_printf("Failed D3D11CreateDevice\n");
             exit(EXIT_FAILURE);
         }
 
@@ -512,7 +550,7 @@ void InitD3D11(void)
         result = device_11_0->QueryInterface(IID_PPV_ARGS(&device));
         if (FAILED(result))
         {
-            OutputDebugStringA("Failed to QueryInterface for ID3D11Device5 from ID3D11Device\n");
+            debug_printf("Failed to QueryInterface for ID3D11Device5 from ID3D11Device\n");
             exit(EXIT_FAILURE);
         }
 
@@ -521,7 +559,7 @@ void InitD3D11(void)
 
         if (FAILED(result))
         {
-            OutputDebugStringA("Failed to QueryInterface for ID3D11DeviceContext4 from ID3D11DeviceContext\n");
+            debug_printf("Failed to QueryInterface for ID3D11DeviceContext4 from ID3D11DeviceContext\n");
             exit(EXIT_FAILURE);
         }
 
@@ -541,7 +579,7 @@ void InitD3D11(void)
 
                 if (FAILED(result))
                 {
-                    OutputDebugStringA("Failed to CreateDeferredContext for render thread\n");
+                    debug_printf("Failed to CreateDeferredContext for render thread\n");
                     exit(EXIT_FAILURE);
                 }
 
@@ -550,7 +588,7 @@ void InitD3D11(void)
 
                 if (FAILED(result))
                 {
-                    OutputDebugStringA("Failed to promote ID3D11DeviceContext to ID3D11DeviceContext4\n");
+                    debug_printf("Failed to promote ID3D11DeviceContext to ID3D11DeviceContext4\n");
                     exit(EXIT_FAILURE);
                 }
             }
@@ -571,12 +609,11 @@ void InitD3D11(void)
 
     if (FAILED(result))
     {
-        OutputDebugStringA("Failed to get adapter desc\n");
+        debug_printf("Failed to get adapter desc\n");
         exit(EXIT_FAILURE);
     }
 
-    OutputDebugStringW(desc.Description);
-    OutputDebugStringW(L"\n");
+    debug_printf("%s\n", desc.Description);
 
 
     // Check driver versions
@@ -592,22 +629,19 @@ void InitD3D11(void)
 
             if (SUCCEEDED(result))
             {
-                char msg[64];
-
                 UINT major = (UMDVersion.QuadPart >> 48) & 0xFFFF;
                 UINT minor = (UMDVersion.QuadPart >> 32) & 0xFFFF;
                 UINT revision = (UMDVersion.QuadPart >> 16) & 0xFFFF;
                 UINT patch = (UMDVersion.QuadPart >> 0) & 0xFFFF;
 
-                snprintf(msg, 64, "Driver version: %d.%d.%d.%d\n", major, minor, revision, patch);
-                OutputDebugStringA(msg);
+                debug_printf("Driver version: %d.%d.%d.%d\n", major, minor, revision, patch);
 
                 // nVidia reports: 32.0.15.558
                 // AMD reports   : 31.0.21912.14
 
             }
             else
-                OutputDebugStringA("Failed to query driver version\n");
+                debug_printf("Failed to query driver version\n");
 
 #if USE_WARP
             assert(UMDVersion.QuadPart == 281474977497088); // 1.0.12.0
@@ -622,13 +656,8 @@ void InitD3D11(void)
             NvAPI_ShortString BuildBranchString;
             if (NvAPI_SYS_GetDriverAndBranchVersion(&DriverVersion, BuildBranchString) == NVAPI_OK)
             {
-
-                char msg[1024];
-                snprintf(msg, 1024, "nVidia Driver Version: %u\n", DriverVersion);
-                OutputDebugStringA(msg);
-
-                snprintf(msg, 1024, "nVidia Driver Branch String: %s\n", BuildBranchString);
-                OutputDebugStringA(msg);
+                debug_printf("nVidia Driver Version: %u\n", DriverVersion);
+                debug_printf("nVidia Driver Branch String: %s\n", BuildBranchString);
             }
         }
 #endif
@@ -640,22 +669,15 @@ void InitD3D11(void)
             AGSGPUInfo gpu_info = {};
             if (agsInitialize(AGS_CURRENT_VERSION, nullptr, &ctx, &gpu_info) == AGS_SUCCESS)
             {
-                char msg[1024];
-                snprintf(msg, 1024, "AMD Driver Version: %s\n", gpu_info.driverVersion);
-                OutputDebugStringA(msg);
-
-                snprintf(msg, 1024, "Radeon Software Version: %s\n", gpu_info.radeonSoftwareVersion);
-                OutputDebugStringA(msg);
-
-                snprintf(msg, 1024, "%d Devices\n", gpu_info.numDevices);
-                OutputDebugStringA(msg);
+                debug_printf("AMD Driver Version: %s\n", gpu_info.driverVersion);
+                debug_printf("Radeon Software Version: %s\n", gpu_info.radeonSoftwareVersion);
+                debug_printf("%d Devices\n", gpu_info.numDevices);
 
                 for (int i = 0; i < gpu_info.numDevices; i++)
                 {
                     AGSDeviceInfo* device = &gpu_info.devices[i];
 
-                    snprintf(msg, 1024, "  Adapter String: %s\n", device->adapterString);
-                    OutputDebugStringA(msg);
+                    debug_printf("  Adapter String: %s\n", device->adapterString);
 
                     // There's a bunch of other info here, may or may not be useful
                 }
@@ -683,28 +705,18 @@ void InitD3D11(void)
     DXGI_QUERY_VIDEO_MEMORY_INFO VMInfo;
     if SUCCEEDED(dxgiAdapter->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &VMInfo))
     {
-        char msg[1024];
-        snprintf(msg, 1024, "Video Memory Info (MB)\n Budget: %" PRIu64 "\n CurrentUsage : %" PRIu64 "\n AvailableForReservation % " PRIu64 "\n CurrentReservation : %" PRIu64 "\n",
+        debug_printf("Video Memory Info (MB)\n Budget: %" PRIu64 "\n CurrentUsage : %" PRIu64 "\n AvailableForReservation % " PRIu64 "\n CurrentReservation : %" PRIu64 "\n",
             VMInfo.Budget / 1024 / 1024,
             VMInfo.CurrentUsage / 1024 / 1024,
             VMInfo.AvailableForReservation / 1024 / 1024,
             VMInfo.CurrentReservation / 1024 / 1024);
-        OutputDebugStringA(msg);
     }
     else
-    {
-        OutputDebugStringA("Failed to QueryVideoMemoryInfo");
-    }
-
-
+        debug_printf("Failed to QueryVideoMemoryInfo");
 
 
     dxgi_debug_init();
-
-
     dxgi_debug_report();
-
-
 
     IDXGIOutput* dxgiOutput = nullptr;
 
@@ -720,29 +732,29 @@ void InitD3D11(void)
             DXGI_OUTPUT_DESC desc;
             pOutput->GetDesc(&desc);
 
-            OutputDebugStringA("Device : \n");
+            debug_printf("Device : \n");
             OutputDebugString(desc.DeviceName);
 
             switch (desc.Rotation)
             {
             case DXGI_MODE_ROTATION_UNSPECIFIED:
-                OutputDebugStringA("Rotation: DXGI_MODE_ROTATION_UNSPECIFIED\n");
+                debug_printf("Rotation: DXGI_MODE_ROTATION_UNSPECIFIED\n");
                 break;
 
             case DXGI_MODE_ROTATION_IDENTITY:
-                OutputDebugStringA("Rotation: DXGI_MODE_ROTATION_IDENTITY\n");
+                debug_printf("Rotation: DXGI_MODE_ROTATION_IDENTITY\n");
                 break;
 
             case DXGI_MODE_ROTATION_ROTATE90:
-                OutputDebugStringA("Rotation: DXGI_MODE_ROTATION_ROTATE90\n");
+                debug_printf("Rotation: DXGI_MODE_ROTATION_ROTATE90\n");
                 break;
 
             case DXGI_MODE_ROTATION_ROTATE180:
-                OutputDebugStringA("Rotation: DXGI_MODE_ROTATION_ROTATE180\n");
+                debug_printf("Rotation: DXGI_MODE_ROTATION_ROTATE180\n");
                 break;
 
             case DXGI_MODE_ROTATION_ROTATE270:
-                OutputDebugStringA("Rotation: DXGI_MODE_ROTATION_ROTATE270\n");
+                debug_printf("Rotation: DXGI_MODE_ROTATION_ROTATE270\n");
                 break;
             }
 
@@ -783,7 +795,7 @@ void InitD3D11(void)
 
         if (FAILED(result))
         {
-            OutputDebugStringA("Failed to query dxgiOutput6 from dxgiOutput\n");
+            debug_printf("Failed to query dxgiOutput6 from dxgiOutput\n");
             exit(EXIT_FAILURE);
         }
 
@@ -796,18 +808,18 @@ void InitD3D11(void)
 
         if (FAILED(result))
         {
-            OutputDebugStringA("Failed to query hardware composition support from dxgiOutput6\n");
+            debug_printf("Failed to query hardware composition support from dxgiOutput6\n");
             exit(EXIT_FAILURE);
         }
 
         if (hardware_composition_support && DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_FULLSCREEN)
-            OutputDebugStringA("DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_FULLSCREEN == Supported\n");
+            debug_printf("DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_FULLSCREEN == Supported\n");
 
         if (hardware_composition_support && DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_WINDOWED)
-            OutputDebugStringA("DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_WINDOWED == Supported\n");
+            debug_printf("DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_WINDOWED == Supported\n");
 
         if (hardware_composition_support && DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_CURSOR_STRETCHED)
-            OutputDebugStringA("DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_CURSOR_STRETCHED == Supported\n");
+            debug_printf("DXGI_HARDWARE_COMPOSITION_SUPPORT_FLAG_CURSOR_STRETCHED == Supported\n");
 
 
         UINT supported = 0;
@@ -815,15 +827,15 @@ void InitD3D11(void)
         //result = dxgiOutput6->CheckOverlaySupport(DXGI_FORMAT_B8G8R8A8_UNORM, device, &supported);
 
         if (supported && DXGI_OVERLAY_SUPPORT_FLAG_DIRECT)
-            OutputDebugStringA("DXGI_OVERLAY_SUPPORT_FLAG_DIRECT == Supported\n");
+            debug_printf("DXGI_OVERLAY_SUPPORT_FLAG_DIRECT == Supported\n");
 
         if (supported && DXGI_OVERLAY_SUPPORT_FLAG_SCALING)
-            OutputDebugStringA("DXGI_OVERLAY_SUPPORT_FLAG_SCALING  == Supported\n");
+            debug_printf("DXGI_OVERLAY_SUPPORT_FLAG_SCALING  == Supported\n");
 
         if (dxgiOutput6->SupportsOverlays())
-            OutputDebugStringA("Multi plane overlay (MPO) is supported\n");
+            debug_printf("Multi plane overlay (MPO) is supported\n");
         else
-            OutputDebugStringA("Multi plane overlay (MPO) is NOT supported. This may affect the ability to enable tearing support\n");
+            debug_printf("Multi plane overlay (MPO) is NOT supported. This may affect the ability to enable tearing support\n");
 
 
 
@@ -848,8 +860,8 @@ void InitD3D11(void)
             mode_descriptions
         );
 
-        OutputDebugStringA("Fullscreen modes available\n");
-        OutputDebugStringA("Mode    Format Width Height     Refresh  Stereo Scaling ScanlineOrdering\n");
+        debug_printf("Fullscreen modes available\n");
+        debug_printf("Mode    Format Width Height     Refresh  Stereo Scaling ScanlineOrdering\n");
 
 
         DXGI_OUTPUT_DESC1 output_desc1;
@@ -864,8 +876,7 @@ void InitD3D11(void)
         {
             DXGI_MODE_DESC1* ptr = &mode_descriptions[i];
 
-            char msg[1024];
-            snprintf(msg, 1024, "%4d  %8x  %4u   %4u %5u/%05u   %5s    %4x             %4x\n",
+            debug_printf("%4d  %8x  %4u   %4u %5u/%05u   %5s    %4x             %4x\n",
                 i,
                 ptr->Format,
                 ptr->Width,
@@ -875,11 +886,9 @@ void InitD3D11(void)
                 ptr->Scaling,
                 ptr->ScanlineOrdering);
 
-            OutputDebugStringA(msg);
-
             if (ptr->Width == display_width && ptr->Height == display_height && !ptr->Stereo)
             {
-                OutputDebugStringA("* Selected\n");
+                debug_printf("* Selected\n");
                 best_fullscreen_mode = ptr;
             }
         }
@@ -907,7 +916,7 @@ void InitD3D11(void)
         HRESULT hr = device->CheckMultisampleQualityLevels1(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, sampleCount, 0, &sampleCountQuality[i]);
         if (FAILED(hr))
         {
-            OutputDebugStringA("Failed to determine Multisample quality level");
+            debug_printf("Failed to determine Multisample quality level");
             exit(EXIT_FAILURE);
         }
 
@@ -917,9 +926,7 @@ void InitD3D11(void)
         // If quality level is zero, it's unsupported. This will underflow to UINT_MAX
 
         
-        char msg[1024];
-        snprintf(msg, 1024, "Multisample Count %d supports Max Quality %d\n", sampleCount, sampleCountQuality[i]);
-        OutputDebugStringA(msg);
+        debug_printf("Multisample Count %d supports Max Quality %d\n", sampleCount, sampleCountQuality[i]);
     }
 
     //MSAA_Count = 4;
@@ -934,16 +941,8 @@ void InitD3D11(void)
     // If MSAA_Count == 1, we should just disable MSAA entirely and avoid the resolve
     assert(MSAA_Count > 1);
 
-
-    {
-        char msg[1024];
-        snprintf(msg, 1024, "Using Multisample Count %d : Quality %d\n", MSAA_Count, MSAA_Quality);
-        OutputDebugStringA(msg);
-
-    }
+    debug_printf("Using Multisample Count %d : Quality %d\n", MSAA_Count, MSAA_Quality);
 #endif
-
-
 
     // Swapchain creation
     {
@@ -997,7 +996,7 @@ void InitD3D11(void)
 
         if (FAILED(result))
         {
-            OutputDebugStringA("Failed to CreateSwapChainForHwnd from dxgiFactory\n");
+            debug_printf("Failed to CreateSwapChainForHwnd from dxgiFactory\n");
             exit(EXIT_FAILURE);
         }
 
@@ -1015,12 +1014,8 @@ void InitD3D11(void)
 
         assert(S_OK == result && swapchain && device && device_context_11_x);
 
-        OutputDebugStringA("Direct3D 11 device context created\n");
-
-        char msg[1024];
-        snprintf(msg, 1024, "            Feature level 0x%x\n", feature_level);
-        OutputDebugStringA(msg);
-
+        debug_printf("Direct3D 11 device context created\n");
+        debug_printf("            Feature level 0x%x\n", feature_level);
 
 
 #if MSAA_ENABLED
@@ -1059,7 +1054,7 @@ void InitD3D11(void)
 
             if (FAILED(result))
             {
-                OutputDebugStringA("Failed to CreateTexture2D for MSAA texture\n");
+                debug_printf("Failed to CreateTexture2D for MSAA texture\n");
                 exit(EXIT_FAILURE);
             }
 
@@ -1316,9 +1311,9 @@ void InitShaders(void)
 
     if (FAILED(hr))
     {
-        OutputDebugStringA("Failed to compile vertex shader\n");
+        debug_printf("Failed to compile vertex shader\n");
         if (error_blob)
-            OutputDebugStringA((char*)error_blob->GetBufferPointer());
+            debug_printf((char*)error_blob->GetBufferPointer());
         exit(EXIT_FAILURE);
     }
 
@@ -1336,9 +1331,9 @@ void InitShaders(void)
 
     if (FAILED(hr))
     {
-        OutputDebugStringA("Failed to compile pixel shader\n");
+        debug_printf("Failed to compile pixel shader\n");
         if (error_blob)
-            OutputDebugStringA((char*)error_blob->GetBufferPointer());
+            debug_printf((char*)error_blob->GetBufferPointer());
         exit(EXIT_FAILURE);
     }
 
@@ -1413,7 +1408,7 @@ void InitShaders(void)
 
         if (FAILED(hr))
         {
-            OutputDebugStringA("Failed to create constant buffer");
+            debug_printf("Failed to create constant buffer");
             exit(EXIT_FAILURE);
         }
     }
@@ -1464,9 +1459,7 @@ void DrawLotsUnoptimised(ID3D11DeviceContext4* device, UINT threadIndex, UINT nu
         const int this_batch_begin = (int)(per_batch * threadIndex);
         const int this_batch_end = ((int)(per_batch * float(threadIndex + 1))) - 1;
 
-        //char msg[1024];
-        //snprintf(msg, 1024, "threadId %d of %d threads. Total Viewports = %d. Per batch = %d.  Begin: %d  End: %d\n", threadIndex, numThreads, total_viewports, (int)per_batch, this_batch_begin, this_batch_end);
-        //OutputDebugStringA(msg);
+        //debug_printf("threadId %d of %d threads. Total Viewports = %d. Per batch = %d.  Begin: %d  End: %d\n", threadIndex, numThreads, total_viewports, (int)per_batch, this_batch_begin, this_batch_end);
 
         float offset_x = (((float)window_width / viewports_x) * 0.5f);
         float offset_y = (((float)window_height / viewports_y) * 0.5f);
@@ -1477,9 +1470,7 @@ void DrawLotsUnoptimised(ID3D11DeviceContext4* device, UINT threadIndex, UINT nu
             UINT cell_x = i % viewports_x;
             UINT cell_y = i / viewports_x;
 
-            //char msg[1024];
-            //snprintf(msg, 1024, "viewport %d has cell x=%d  y=%d\n", i, cell_x, cell_y);
-            //OutputDebugStringA(msg);
+            //debug_printf("viewport %d has cell x=%d  y=%d\n", i, cell_x, cell_y);
 
             {
                 // Set a viewport for this block
@@ -1547,9 +1538,7 @@ void render(void)
             0.0f, 1.0f };   // DepthMin, DepthMax
 
 #if 0
-        char msg[1024];
-        snprintf(msg, 1024, "render time viewport dimensions %f x %f\n", viewport.Width, viewport.Height);
-        OutputDebugStringA(msg);
+        debug_printf("render time viewport dimensions %f x %f\n", viewport.Width, viewport.Height);
 #endif
 
         device_context_11_x->RSSetViewports(1, &viewport);
@@ -1750,7 +1739,7 @@ void render(void)
 
     if (FAILED(hr))
     {
-        OutputDebugStringA("Failed to retrieve swapchain buffer\n");
+        debug_printf("Failed to retrieve swapchain buffer\n");
         exit(EXIT_FAILURE);
     }
 
@@ -2016,9 +2005,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     assert(SUCCEEDED(result));
                     D3D11_TEXTURE2D_DESC framebufferSurfaceDesc;
                     swapchain_framebuffer->GetDesc(&framebufferSurfaceDesc);
-                    char msg[1024];
-                    snprintf(msg, 1024, "Swapchain framebuffer surface dimensions : %d x %d\n", framebufferSurfaceDesc.Width, framebufferSurfaceDesc.Height);
-                    OutputDebugStringA(msg);
+                    debug_printf("Swapchain framebuffer surface dimensions : %d x %d\n", framebufferSurfaceDesc.Width, framebufferSurfaceDesc.Height);
                     swapchain_framebuffer->Release();
                     swapchain_framebuffer = nullptr;
                 }
@@ -2037,10 +2024,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
     case WM_SIZE:
         {
-            char msg[1024];
-            snprintf(msg, 1024, "New WM_SIZE event: %d x %d\n", LOWORD(lParam), HIWORD(lParam));
-
-            OutputDebugStringA(msg);
+            debug_printf("New WM_SIZE event: %d x %d\n", LOWORD(lParam), HIWORD(lParam));
 
             framechanged = true;
 
@@ -2153,7 +2137,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             if (FAILED(hr))
             {
-                OutputDebugStringA("Failed to resize swapchain buffer\n");
+                debug_printf("Failed to resize swapchain buffer\n");
                 exit(EXIT_FAILURE);
             }
 
@@ -2178,18 +2162,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             if (FAILED(hr))
             {
-                OutputDebugStringA("Failed to retrieve swapchain buffer\n");
+                debug_printf("Failed to retrieve swapchain buffer\n");
                 exit(EXIT_FAILURE);
             }
 
             D3D11_TEXTURE2D_DESC desc;
             pBuffer->GetDesc(&desc);
-
-            //char msg[1024];
-            snprintf(msg, 1024, "Swapchain buffer size : %d x %d\n", desc.Width, desc.Height);
-            OutputDebugStringA(msg);
-
-
+            debug_printf("Swapchain buffer size : %d x %d\n", desc.Width, desc.Height);
             {
                 D3D11_RENDER_TARGET_VIEW_DESC rtvDesc = {
                     .Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
@@ -2200,7 +2179,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
                 if (FAILED(hr))
                 {
-                    OutputDebugStringA("Failed to create render target view\n");
+                    debug_printf("Failed to create render target view\n");
                     exit(EXIT_FAILURE);
                 }
             }
