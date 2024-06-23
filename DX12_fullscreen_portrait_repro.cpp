@@ -1630,6 +1630,137 @@ void WaitForPreviousFrame(void)
 }
 #endif
 
+enum class shaderType {
+    VERTEX_SHADER,
+    PIXEL_SHADER
+};
+
+HRESULT CompileBasicShader(enum class shaderType type, IDxcUtils* utils, IDxcCompiler3* compiler, const DxcBuffer shaderSourceBuffer, IDxcBlob** shaderBlob)
+{
+    LPCWSTR entryPoint = nullptr;
+    LPCWSTR targetProfile = nullptr;
+    char* shaderTypeShort = nullptr;
+    char* shaderTypeLong = nullptr;
+
+
+#if DRAW_LOTS_OPTIMISED
+    const DxcDefine defines[] = {
+        { L"DRAW_LOTS_OPTIMISED", L"1" }
+    };
+    const DxcDefine* pDefines = &defines[0];
+    const int numDefines = ARRAY_COUNT(defines);
+#else
+    const DxcDefine* pDefines = nullptr;
+    const int numDefines = 0;
+#endif
+
+
+    switch (type)
+    {
+        case shaderType::VERTEX_SHADER:
+            entryPoint = L"vs_main";
+            targetProfile = L"vs_6_1";
+            shaderTypeShort = (char*)"VS";
+            shaderTypeLong = (char*)"vertex shader";
+            break;
+
+        case shaderType::PIXEL_SHADER:
+            entryPoint = L"ps_main";
+            targetProfile = L"ps_6_1";
+            shaderTypeShort = (char *)"PS";
+            shaderTypeLong = (char*)"pixel shader";
+            break;
+    }
+
+    {
+        //IDxcOperationResult* result;
+        IDxcResult* result;
+        IDxcCompilerArgs* args = nullptr;
+
+        const wchar_t* arguments[] = {
+            L"-HV", L"202x",
+            L"-Weverything",
+            //L"-Werror"
+
+            L"-Wconversion",
+            L"-Wdouble-promotion",
+            L"-Whlsl-legacy-literal",
+
+            L"-all-resources-bound" // D3DCOMPILE_ALL_RESOURCES_BOUND
+        };
+
+        /*
+        const DxcDefine constants[] = {
+            { L"D3DCOMPILE_ALL_RESOURCES_BOUND", L"1" }
+        };
+        */
+
+
+        HRESULT hr = utils->BuildArguments(L"shader.hlsl",
+            entryPoint,
+            targetProfile,
+            arguments,
+            ARRAY_COUNT(arguments),
+            pDefines,
+            numDefines,
+            &args
+        );
+
+        if (FAILED(hr))
+        {
+            debug_printf("Failed to create %s build arguments\n", shaderTypeLong);
+            exit(EXIT_FAILURE);
+        }
+
+        hr = compiler->Compile(
+            &shaderSourceBuffer,
+            args->GetArguments(), args->GetCount(),
+            nullptr,
+            IID_PPV_ARGS(&result));
+
+        if (SUCCEEDED(hr))
+            result->GetStatus(&hr);
+
+        if (FAILED(hr))
+        {
+            debug_printf("Failed to compile %s blob\n", shaderTypeLong);
+
+            if (result)
+            {
+                IDxcBlobEncoding* errorsBlob;
+                hr = result->GetErrorBuffer(&errorsBlob);
+                if (SUCCEEDED(hr) && errorsBlob)
+                    debug_printf("%s Compilation failed with errors:\n%hs\n", shaderTypeShort, (const char*)errorsBlob->GetBufferPointer());
+            }
+
+            exit(EXIT_FAILURE);
+        }
+        else
+        {
+            if (result)
+            {
+                IDxcBlobWide* output = nullptr;
+                IDxcBlobWide* blobName = nullptr;
+
+                // TODO: Doesn't seem to do anything
+                result->GetOutput(result->PrimaryOutput(), IID_PPV_ARGS(&output), &blobName);
+
+                IDxcBlobEncoding* errorsBlob;
+                hr = result->GetErrorBuffer(&errorsBlob);
+                if (SUCCEEDED(hr) && errorsBlob)
+                {
+                    debug_printf("%s Compilation suceeded with output:\n%hs\n", shaderTypeShort, (const char*)errorsBlob->GetBufferPointer());
+                    errorsBlob->Release();
+                }
+            }
+        }
+
+        result->GetResult(shaderBlob);
+        result->Release();
+    }
+
+    return S_OK;
+}
 
 void InitShaders(void)
 {
@@ -1846,194 +1977,10 @@ void InitShaders(void)
     IDxcBlob* vs_code;
     IDxcBlob* ps_code;
 
-#if DRAW_LOTS_OPTIMISED
-    const DxcDefine defines[] = {
-        { L"DRAW_LOTS_OPTIMISED", L"1" }
-    };
-    const DxcDefine* pDefines = &defines[0];
-    const int numDefines = ARRAY_COUNT(defines);
-#else
-    const DxcDefine* pDefines = nullptr;
-    const int numDefines = 0;
-#endif
-
-    {
-        IDxcOperationResult* result;
-        IDxcCompilerArgs* args = nullptr;
-
-        // Enable all warning flags for shaders
-        // At a minimum:  -HV 202x -Wconversion -Wdouble-promotion -Whlsl-legacy-literal
 
 
-        const wchar_t *arguments[] = {
-            L"-HV", L"202x",
-            L"-Weverything",
-            //L"-Werror"
-
-            L"-Wconversion",
-            L"-Wdouble-promotion",
-            L"-Whlsl-legacy-literal",
-
-            L"-all-resources-bound" // D3DCOMPILE_ALL_RESOURCES_BOUND
-        };
-
-
-
-        hr = utils->BuildArguments(L"shader.hlsl",
-            L"vs_main",
-            L"vs_6_1",
-            arguments,
-            ARRAY_COUNT(arguments),
-            pDefines,
-            numDefines, 
-            &args
-        );
-
-        if (FAILED(hr))
-        {
-            OutputDebugStringA("Failed to create VS build arguments\n");
-            exit(EXIT_FAILURE);
-        }
-
-        hr = compiler->Compile(
-            &shaderSourceBuffer,
-            args->GetArguments(), args->GetCount(),
-            nullptr,
-            IID_PPV_ARGS(&result));
-
-        if (SUCCEEDED(hr))
-            result->GetStatus(&hr);
-
-        if (FAILED(hr))
-        {
-            OutputDebugStringA("Failed to compile vertex shader blob\n");
-
-            if (result)
-            {
-                IDxcBlobEncoding* errorsBlob;
-                hr = result->GetErrorBuffer(&errorsBlob);
-                if (SUCCEEDED(hr) && errorsBlob)
-                {
-                    char msg[2048];
-                    snprintf(msg, 2048, "VS Compilation failed with errors:\n%hs\n", (const char*)errorsBlob->GetBufferPointer());
-                    OutputDebugStringA(msg);
-                }
-            }
-
-            exit(EXIT_FAILURE);
-        }
-        else
-        {
-            if (result)
-            {
-                IDxcBlobEncoding* errorsBlob;
-                hr = result->GetErrorBuffer(&errorsBlob);
-                if (SUCCEEDED(hr) && errorsBlob)
-                {
-                    char msg[2048];
-                    snprintf(msg, 2048, "VS Compilation suceeded with output::\n%hs\n", (const char*)errorsBlob->GetBufferPointer());
-                    OutputDebugStringA(msg);
-                    errorsBlob->Release();
-                }
-            }
-        }
-
-        result->GetResult(&vs_code);
-        result->Release();
-    }
-
-    {
-        //IDxcOperationResult* result;
-        IDxcResult* result;
-        IDxcCompilerArgs* args = nullptr;
-
-        const wchar_t* arguments[] = {
-            L"-HV", L"202x",
-            L"-Weverything",
-            //L"-Werror"
-
-            L"-Wconversion",
-            L"-Wdouble-promotion",
-            L"-Whlsl-legacy-literal",
-
-            L"-all-resources-bound" // D3DCOMPILE_ALL_RESOURCES_BOUND
-        };
-
-        /*
-        const DxcDefine constants[] = {
-            { L"D3DCOMPILE_ALL_RESOURCES_BOUND", L"1" }
-        };
-        */
-
-
-        hr = utils->BuildArguments(L"shader.hlsl",
-            L"ps_main",
-            L"ps_6_1",
-            arguments,
-            ARRAY_COUNT(arguments),
-            pDefines,
-            numDefines,
-            &args
-        );
-
-        if (FAILED(hr))
-        {
-            OutputDebugStringA("Failed to create VS build arguments\n");
-            exit(EXIT_FAILURE);
-        }
-
-        hr = compiler->Compile(
-            &shaderSourceBuffer,
-            args->GetArguments(), args->GetCount(),
-            nullptr,
-            IID_PPV_ARGS(&result));
-
-        if (SUCCEEDED(hr))
-            result->GetStatus(&hr);
-
-        if (FAILED(hr))
-        {
-            OutputDebugStringA("Failed to compile pixel shader blob\n");
-
-            if (result)
-            {
-                IDxcBlobEncoding* errorsBlob;
-                hr = result->GetErrorBuffer(&errorsBlob);
-                if (SUCCEEDED(hr) && errorsBlob)
-                {
-                    char msg[2048];
-                    snprintf(msg, 2048, "PS Compilation failed with errors:\n%hs\n", (const char*)errorsBlob->GetBufferPointer());
-                    OutputDebugStringA(msg);
-                }
-            }
-
-            exit(EXIT_FAILURE);
-        }
-        else
-        {
-            if (result)
-            {
-                IDxcBlobWide* output = nullptr;
-                IDxcBlobWide* blobName = nullptr;
-
-                // TODO: Doesn't seem to do anything
-                result->GetOutput(result->PrimaryOutput(), IID_PPV_ARGS(&output), &blobName);
-                
-                IDxcBlobEncoding* errorsBlob;
-                hr = result->GetErrorBuffer(&errorsBlob);
-                if (SUCCEEDED(hr) && errorsBlob)
-                {
-                    char msg[2048];
-                    snprintf(msg, 2048, "VS Compilation suceeded with output::\n%hs\n", (const char*)errorsBlob->GetBufferPointer());
-                    OutputDebugStringA(msg);
-                    errorsBlob->Release();
-                }
-            }
-        }
-
-        result->GetResult(&ps_code);
-        result->Release();
-    }
+    CompileBasicShader(shaderType::VERTEX_SHADER, utils, compiler, shaderSourceBuffer, &vs_code);
+    CompileBasicShader(shaderType::PIXEL_SHADER, utils, compiler, shaderSourceBuffer, &ps_code);
 
     utils->Release();
     compiler->Release();
