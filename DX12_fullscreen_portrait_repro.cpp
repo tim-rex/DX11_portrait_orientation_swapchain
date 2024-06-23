@@ -367,8 +367,8 @@ bool ManualWriteTrackingResourceSupported = false;  // Pix to more easily track 
 //       This would require using the UPLOAD heap and then COPY into the DEFAULT heap with appropriate resource synchronisation
 //       This is likely what our D3D11 equivalent is doing every time we map/unmap()
 
-const int viewports_x = 100;
-const int viewports_y = 100;
+const int viewports_x = 10;
+const int viewports_y = 10;
 
 
 #define RENDER_THREADS 4
@@ -783,10 +783,10 @@ void InitD3D12(void)
             //snprintf(msg, 32, "Driver version: %lld\n", UMDVersion.QuadPart);
             //OutputDebugStringA(msg);
 
-            INT major = (UMDVersion.QuadPart >> 48) & 0xFFFF;
-            INT minor = (UMDVersion.QuadPart >> 32) & 0xFFFF;
-            INT revision = (UMDVersion.QuadPart >> 16) & 0xFFFF;
-            INT patch = (UMDVersion.QuadPart >> 0) & 0xFFFF;
+            UINT major = (UMDVersion.QuadPart >> 48) & 0xFFFF;
+            UINT minor = (UMDVersion.QuadPart >> 32) & 0xFFFF;
+            UINT revision = (UMDVersion.QuadPart >> 16) & 0xFFFF;
+            UINT patch = (UMDVersion.QuadPart >> 0) & 0xFFFF;
 
             snprintf(msg, 32, "Driver version: %d.%d.%d.%d\n", major, minor, revision, patch);
             OutputDebugStringA(msg);
