@@ -772,6 +772,35 @@ void InitD3D12(void)
     OutputDebugStringW(desc.Description);
     OutputDebugStringW(L"\n");
 
+
+    {
+        LARGE_INTEGER UMDVersion = {};
+        result = dxgiAdapter->CheckInterfaceSupport(IID_IDXGIDevice, &UMDVersion);
+
+        if (SUCCEEDED(result))
+        {
+            char msg[32];
+            //snprintf(msg, 32, "Driver version: %lld\n", UMDVersion.QuadPart);
+            //OutputDebugStringA(msg);
+
+            INT major = (UMDVersion.QuadPart >> 48) & 0xFFFF;
+            INT minor = (UMDVersion.QuadPart >> 32) & 0xFFFF;
+            INT revision = (UMDVersion.QuadPart >> 16) & 0xFFFF;
+            INT patch = (UMDVersion.QuadPart >> 0) & 0xFFFF;
+
+            snprintf(msg, 32, "Driver version: %d.%d.%d.%d\n", major, minor, revision, patch);
+            OutputDebugStringA(msg);
+        }
+        else
+            OutputDebugStringA("Failed to query driver version\n");
+
+#if USE_WARP
+        assert(UMDVersion.QuadPart == 281474977497088); // 1.0.12.0
+#endif
+    }
+
+
+
     {
         char msg[32];
         snprintf(msg, 32, "Node count == %d\n", device->GetNodeCount());
