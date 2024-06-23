@@ -7,6 +7,7 @@
 #pragma comment( lib, "dxgi.lib" )        // directx graphics interface
 #pragma comment( lib, "dxcompiler.lib" )  // DX12 shader compiler
 #pragma comment( lib, "dxguid.lib" )
+#pragma comment( lib, "shlwapi.lib")
 
 #include "framework.h"
 
@@ -16,6 +17,8 @@
 #include <dxcapi.h> // DX12 shader compiler
 
 #include <dxgidebug.h>
+#include <Shlwapi.h>
+
 
 #if defined _M_X64 || defined _M_ARM64 
 #include <pix3.h>   // Pix integration
@@ -415,6 +418,8 @@ void dxgi_debug_post_device_init()
 #define ROOT_CONSTANTS_ENABLED 0
 #define DRAW_LOTS_UNOPTIMISED 0
 #define DRAW_LOTS_OPTIMISED 1
+
+#define LOAD_PRE_COMPILED_SHADER 1
 
 
 bool GPUUploadHeapSupported = false; // Requires Agility SDK
@@ -1694,7 +1699,6 @@ HRESULT CompileBasicShader(enum class shaderType type, IDxcUtils* utils, IDxcCom
         };
         */
 
-
         HRESULT hr = utils->BuildArguments(L"shader.hlsl",
             entryPoint,
             targetProfile,
@@ -1761,8 +1765,110 @@ HRESULT CompileBasicShader(enum class shaderType type, IDxcUtils* utils, IDxcCom
     return S_OK;
 }
 
+
+HRESULT LoadShaderFromFile(IDxcUtils* utils, const wchar_t* filename, IDxcBlob** shaderBlob)
+{
+    HRESULT hr = 0;
+
+#if 1
+    IDxcBlobEncoding *blobEncoding;
+    hr = utils->LoadFile(filename, nullptr, &blobEncoding);
+    if (FAILED(hr))
+    {
+        debug_printf(L"Failed to load file (%s) : Error (%d)", filename, hr);
+        return hr;
+    }
+
+    hr = blobEncoding->QueryInterface(IID_PPV_ARGS(shaderBlob));
+    if (FAILED(hr))
+    {
+        debug_printf("Failed to query IDxcBlob from IDxcBlobEncoding");
+        return hr;
+    }
+    
+    return S_OK;
+
+
+#else
+    HANDLE fileHandle = CreateFileA(filename, GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+
+    // Check for error
+    if (fileHandle == INVALID_HANDLE_VALUE) {
+        DWORD err = GetLastError();
+        printf("Source file not opened. Error %u", er);
+        return err;
+    }
+
+    DWORD filesize = GetFileSize(fileHandle, nullptr);
+    DWORD bytesRead = 0;
+
+    uint8_t* buffer = (uint8_t*)malloc(filesize);
+
+    if (!ReadFile(fileHandle, buffer, filesize, &bytesRead, NULL))
+    {
+        DWORD err = GetLastError();
+        printf("Source file not read from. Error %u", err);
+        return err;
+    }
+
+    // Check for EOF reached
+    if (bytesRead == 0) {
+        return -1;
+    }
+
+    if (bytesRead != filesize) {
+        return -1;
+    }
+
+    CloseHandle(fileHandle);
+
+
+    (*shaderBlob)->
+    return S_OK;
+#endif
+
+}
+
 void InitShaders(void)
 {
+    HRESULT hr = 0;
+
+    IDxcUtils* utils = nullptr;
+
+    hr = DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&utils));
+
+    if (FAILED(hr))
+    {
+        debug_printf("Failed to create Dxc utils instance\n");
+        exit(EXIT_FAILURE);
+    }
+
+
+    // Set working directory to that of the currently running executable
+    {
+        wchar_t directory[1024];
+        GetCurrentDirectory(1024, directory);
+
+        DWORD length = GetModuleFileName(NULL, directory, 1024);
+        PathRemoveFileSpec(directory);
+
+        SetCurrentDirectory(directory);
+    }
+    
+
+    IDxcBlob* vs_code = nullptr;
+    IDxcBlob* ps_code = nullptr;
+
+#if LOAD_PRE_COMPILED_SHADER
+
+#if DRAW_LOTS_OPTIMISED
+    LoadShaderFromFile(utils, L"SimpleVertexShaderInstanced.6_1.cso", &vs_code);
+#else
+    LoadShaderFromFile(utils, L"SimpleVertexShader.6_1.cso", &vs_code);
+#endif
+    LoadShaderFromFile(utils, L"SimplePixelShader.6_1.cso", &ps_code);
+
+#else
     const char* shaderSource = R"(
 
         float2 pixelCoordToNCD(float2 pixel);
@@ -1943,15 +2049,10 @@ void InitShaders(void)
         .Size = strlen(shaderSource),
         .Encoding = 0
      };
-
-
-    HRESULT hr = 0;
     
     //IDxcLibrary* library = nullptr;
     IDxcCompiler3* compiler = nullptr;
     //IDxcBlobEncoding* sourceBlob = nullptr;
-
-    IDxcUtils *utils = nullptr;
 
     
     hr = DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler));
@@ -1963,21 +2064,6 @@ void InitShaders(void)
     }
 
 
-    hr = DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&utils));
-
-    if (FAILED(hr))
-    {
-        debug_printf("Failed to create Dxc utils instance\n");
-        exit(EXIT_FAILURE);
-    }
-
-
-
-    IDxcBlob* vs_code;
-    IDxcBlob* ps_code;
-
-
-
     CompileBasicShader(shaderType::VERTEX_SHADER, utils, compiler, shaderSourceBuffer, &vs_code);
     CompileBasicShader(shaderType::PIXEL_SHADER, utils, compiler, shaderSourceBuffer, &ps_code);
 
@@ -1986,6 +2072,8 @@ void InitShaders(void)
     
     utils = nullptr;
     compiler = nullptr;
+
+#endif
 
 
     // We need a root signature (defined globally)

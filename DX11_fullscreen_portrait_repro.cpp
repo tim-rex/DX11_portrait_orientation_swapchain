@@ -7,6 +7,8 @@
 #pragma comment( lib, "dxgi.lib" )        // directx graphics interface
 #pragma comment( lib, "d3dcompiler.lib" ) // shader compiler
 #pragma comment( lib, "dxguid.lib" )
+#pragma comment( lib, "shlwapi.lib")
+
 
 
 #include "framework.h"
@@ -18,6 +20,8 @@
 #include <dxgi1_6.h>     // CheckHardwareCompositionSupport
 
 #include <dxgidebug.h>   // DXGI_INFO_QUEUE
+#include <Shlwapi.h>
+
 
 #include "d3dcompiler.h"
 
@@ -201,9 +205,10 @@ BOOL allowTearing = false;
 BOOL framechanged = false;
 
 
-#define MSAA_ENABLED 0
+#define MSAA_ENABLED 1
 #define DRAW_LOTS_UNOPTIMISED 1
 #define DRAW_LOTS_OPTIMISED 0
+#define LOAD_PRE_COMPILED_SHADER 1
 
 
 const int viewports_x = 100;
@@ -599,9 +604,6 @@ void InitD3D11(void)
         device_context_11_0 = nullptr;
         device_11_0 = nullptr;
     }
-
-
-
 
 
     DXGI_ADAPTER_DESC3 desc;
@@ -1097,6 +1099,37 @@ void InitD3D11(void)
 
 void InitShaders(void)
 {
+    ID3DBlob* vs_blob_ptr = nullptr;
+    ID3DBlob* ps_blob_ptr = nullptr;
+    ID3DBlob* error_blob = nullptr;
+
+    HRESULT hr = 0;
+
+    // Set working directory to that of the currently running executable
+    {
+        wchar_t directory[1024];
+        GetCurrentDirectory(1024, directory);
+
+        DWORD length = GetModuleFileName(NULL, directory, 1024);
+        PathRemoveFileSpec(directory);
+
+        SetCurrentDirectory(directory);
+    }
+
+#if LOAD_PRE_COMPILED_SHADER
+
+#if DRAW_LOTS_OPTIMISED
+    hr = D3DReadFileToBlob(L"SimpleVertexShaderInstanced.5_0.cso", &vs_blob_ptr);
+    assert(SUCCEEDED(hr));
+#else
+    hr = D3DReadFileToBlob(L"SimpleVertexShader.5_0.cso", &vs_blob_ptr);
+    assert(SUCCEEDED(hr));
+#endif
+    hr = D3DReadFileToBlob(L"SimplePixelShader.5_0.cso", &ps_blob_ptr);
+    assert(SUCCEEDED(hr));
+
+
+#else
     const char* shaderSource = R"(
 
         float2 pixelCoordToNCD(float2 pixel);
@@ -1287,11 +1320,6 @@ void InitShaders(void)
 #endif
 
 
-    ID3DBlob *vs_blob_ptr = nullptr;
-    ID3DBlob *ps_blob_ptr = nullptr;
-    ID3DBlob *error_blob = nullptr;
-
-    HRESULT hr = 0;
     hr = D3DCompile(shaderSource, strlen(shaderSource), "basic vertex shader", pDefines, nullptr,
         "vs_main",
         "vs_5_0",
@@ -1331,6 +1359,7 @@ void InitShaders(void)
     if (error_blob) error_blob->Release();
     error_blob = nullptr;
 
+#endif
 
     hr = device->CreateVertexShader(
         vs_blob_ptr->GetBufferPointer(),
