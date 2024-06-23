@@ -1025,13 +1025,6 @@ void InitD3D11(void)
             RECT rect;
             GetClientRect(hWnd, &rect);
 
-
-            UINT samples = 1;
-            UINT quality = 0;
-            device->CheckMultisampleQualityLevels1(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, samples, 0, &quality);
-
-
-
             D3D11_TEXTURE2D_DESC desc = {
                 .Width = (UINT) rect.right - rect.left,
                 .Height = (UINT) rect.bottom - rect.top,
@@ -1047,8 +1040,6 @@ void InitD3D11(void)
                 .CPUAccessFlags = 0,
                 .MiscFlags = 0
             };
-
-
 
             result = device->CreateTexture2D(&desc, nullptr, &msaa_render_target);
 
