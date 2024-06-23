@@ -1498,11 +1498,6 @@ void InitD3D12(void)
 
     }
 
-    // TODO: Consider AgilitySDK
-    // TODO: Consider using Visual Studio compile time for shaders
-
-
-
     // TODO: Ref: https://learn.microsoft.com/en-us/windows/win32/direct3d12/porting-from-direct3d-11-to-direct3d-12
     // While there are numerous ways to set up your application, generally applications have one ID3D12CommandAllocator 
     // per swap-chain buffer. This allows the application to proceed to building up a set of commands for the next 
@@ -1560,7 +1555,6 @@ void InitD3D12(void)
             exit(EXIT_FAILURE);
         }
         commandListPre->SetName(L"commandListPre");
-
 
 
         result = device->CreateCommandList1(0, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_LIST_FLAG_NONE, IID_PPV_ARGS(&commandListPost));
@@ -1769,9 +1763,8 @@ HRESULT CompileBasicShader(enum class shaderType type, IDxcUtils* utils, IDxcCom
 HRESULT LoadShaderFromFile(IDxcUtils* utils, const wchar_t* filename, IDxcBlob** shaderBlob)
 {
     HRESULT hr = 0;
-
-#if 1
     IDxcBlobEncoding *blobEncoding;
+
     hr = utils->LoadFile(filename, nullptr, &blobEncoding);
     if (FAILED(hr))
     {
@@ -1787,46 +1780,6 @@ HRESULT LoadShaderFromFile(IDxcUtils* utils, const wchar_t* filename, IDxcBlob**
     }
     
     return S_OK;
-
-
-#else
-    HANDLE fileHandle = CreateFileA(filename, GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-
-    // Check for error
-    if (fileHandle == INVALID_HANDLE_VALUE) {
-        DWORD err = GetLastError();
-        printf("Source file not opened. Error %u", er);
-        return err;
-    }
-
-    DWORD filesize = GetFileSize(fileHandle, nullptr);
-    DWORD bytesRead = 0;
-
-    uint8_t* buffer = (uint8_t*)malloc(filesize);
-
-    if (!ReadFile(fileHandle, buffer, filesize, &bytesRead, NULL))
-    {
-        DWORD err = GetLastError();
-        printf("Source file not read from. Error %u", err);
-        return err;
-    }
-
-    // Check for EOF reached
-    if (bytesRead == 0) {
-        return -1;
-    }
-
-    if (bytesRead != filesize) {
-        return -1;
-    }
-
-    CloseHandle(fileHandle);
-
-
-    (*shaderBlob)->
-    return S_OK;
-#endif
-
 }
 
 void InitShaders(void)
@@ -1843,7 +1796,6 @@ void InitShaders(void)
         exit(EXIT_FAILURE);
     }
 
-
     // Set working directory to that of the currently running executable
     {
         wchar_t directory[1024];
@@ -1855,7 +1807,6 @@ void InitShaders(void)
         SetCurrentDirectory(directory);
     }
     
-
     IDxcBlob* vs_code = nullptr;
     IDxcBlob* ps_code = nullptr;
 
@@ -1897,14 +1848,11 @@ void InitShaders(void)
 #endif
         };
 
-
-
         /* outputs from vertex shader go here. can be interpolated to pixel shader */
         struct vs_out {
             float4 pos : SV_POSITION; // required output of VS
             float4 colour : COLOR0;
         };
-
 
         float2 pixelCoordToNCD(float2 pixel) {
             float2 ncd = ( (pixel / float2(width, height)) - float2(0.5, 0.5)) * 2;
@@ -1924,7 +1872,6 @@ void InitShaders(void)
           else if (input.vertexId == 2)
               output.pos = float4(0.0, 0.5, 0.5, 1.0);
 
-
           // Top Left triangle
 
           if (input.vertexId == 3)
@@ -1933,7 +1880,6 @@ void InitShaders(void)
               output.pos = float4(-0.8, 0.9, 0.5, 1.0);
           else if (input.vertexId == 5)
               output.pos = float4(-0.9, 0.8, 0.5, 1.0);
-
 
           // Top Right triangle
 
@@ -1944,7 +1890,6 @@ void InitShaders(void)
           else if (input.vertexId == 8)
               output.pos = float4(0.8, 0.9, 0.5, 1.0);
 
-
           // Bottom Left triangle
 
           if (input.vertexId == 9)
@@ -1953,7 +1898,6 @@ void InitShaders(void)
               output.pos = float4(-0.8, -0.9, 0.5, 1.0);
           else if (input.vertexId == 11)
               output.pos = float4(-0.9, -0.9, 0.5, 1.0);
-
 
           // Bottom Right triangle
 
@@ -2080,13 +2024,9 @@ void InitShaders(void)
     //ID3D12RootSignature *rootSig = nullptr;
 
     ID3DBlob* rootSigBlob = nullptr;
-
     ID3DBlob* errorsBlob = nullptr;
 
-
-
 #if ROOT_CONSTANTS_ENABLED
-
     D3D12_ROOT_PARAMETER params_1_0[] = {
     {
         .ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
@@ -2197,7 +2137,6 @@ void InitShaders(void)
 
 
     //hr = D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1_1, &rootSigBlob, &errorsBlob);
-
     hr = D3D12SerializeVersionedRootSignature(&rootSigDesc, &rootSigBlob, &errorsBlob);
 
     if (FAILED(hr))
@@ -2211,8 +2150,6 @@ void InitShaders(void)
         debug_printf("Failed to deserialise root sig (hr = %x): no error blob\n", hr);
         exit(EXIT_FAILURE);
     }
-
-
 
     hr = device->CreateRootSignature(0, rootSigBlob->GetBufferPointer(), rootSigBlob->GetBufferSize(), IID_PPV_ARGS(&rootSig));
     assert(SUCCEEDED(hr));
@@ -2261,8 +2198,7 @@ void InitShaders(void)
 #else
             .Count = 1,
             .Quality = 0
-#endif
-            
+#endif      
             },
         .Flags = D3D12_PIPELINE_STATE_FLAG_NONE
     };
@@ -2290,8 +2226,6 @@ void InitShaders(void)
 #if !ROOT_CONSTANTS_ENABLED
     // Create a constant buffer (for framebuffer dimensions)
     {
-
-
         D3D12_HEAP_PROPERTIES heapProperties = {
             .Type = D3D12_HEAP_TYPE_UPLOAD
         };
@@ -2327,7 +2261,6 @@ void InitShaders(void)
             .Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
             .Flags = D3D12_RESOURCE_FLAG_NONE
         };
-
 
 
         D3D12_CPU_DESCRIPTOR_HANDLE cbvHandle = cbvHeap->GetCPUDescriptorHandleForHeapStart();
@@ -2423,7 +2356,6 @@ void InitShaders(void)
                 cbvWriteTracking[i]->TrackWrite(0, &writtenRange);
             }
         }
-
     }
 #endif
 }
@@ -2447,7 +2379,6 @@ float time_lerp(void)
     }
     return t;
 }
-
 
 
 void DrawLotsUnoptimised(ID3D12GraphicsCommandList1* cmdList, UINT threadIndex, UINT numThreads)
@@ -2488,7 +2419,6 @@ void DrawLotsUnoptimised(ID3D12GraphicsCommandList1* cmdList, UINT threadIndex, 
                 cmdList->RSSetViewports(1, &viewport1);
                 cmdList->DrawInstanced(21, 1, 0, 0);   // 7 tri's
 
-
                 // An additional viewport, offset
 
                 D3D12_VIEWPORT viewport2 = {
@@ -2501,7 +2431,6 @@ void DrawLotsUnoptimised(ID3D12GraphicsCommandList1* cmdList, UINT threadIndex, 
                 cmdList->RSSetViewports(1, &viewport2);
                 cmdList->DrawInstanced(21, 1, 0, 0);   // 7 tri's
             }
-
         }
     }
 }
@@ -2571,7 +2500,6 @@ void render(void)
         commandListPre->ResourceBarrier(1, &resourceBarrierTransitionTargetPresent);
     }
 
-
 #else
     // Indicate that the back buffer will be used as a render target
     {
@@ -2590,8 +2518,6 @@ void render(void)
         commandListPre->ResourceBarrier(1, &resourceBarrierTransitionPresentTarget);
     }
 #endif
-
-
 
     InitCommandListForDraw(commandListPre);
 
@@ -2804,7 +2730,6 @@ void render(void)
     commandQueue->ExecuteCommandLists(1, commandListPreList);
 
 
-
 #if DRAW_LOTS_UNOPTIMISED && RENDER_THREADS
 
     // We need to coalesce and execute our render threads BEFORE the MSAA resolve
@@ -2812,7 +2737,6 @@ void render(void)
     WaitForMultipleObjects(numThreads, threadSignalFinishRenderFrame, TRUE, INFINITE);
 
     // Our thread generated commandLists are ready to execute
-
     {
         ID3D12CommandList* ppCommandLists[numThreads] = {};
         for (int i = 0; i < numThreads; i++)
@@ -2826,16 +2750,13 @@ void render(void)
 #endif
 
     // Drawing complete
-
     // Perform the resolve
 
     commandListPost->Reset(commandAllocator[frameIndex], pso);
 
-
 #if MSAA_ENABLED
 
     // Transition MSAA buffer from TARGET to SOURCE
-
 
     // Indicate that the MSAA buffer will be used as a SOURCE for the resolve operation
     // Indicate that the swapchain back buffer will transition to a RESOLVE_DEST state
@@ -2870,13 +2791,10 @@ void render(void)
         commandListPost->ResourceBarrier(2, &resourceBarrierTransitionMSAATargetToSource_Framebuffer_PresentToResolve[0]);
     }
 
-
-
     commandListPost->ResolveSubresource(framebuffer[frameIndex], 0, framebuffer_MSAA[frameIndex], 0, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB);
 
     // Now set the actual swapchain render target
     commandListPost->OMSetRenderTargets(1, rtvTarget, FALSE, nullptr);
-
 
     // Indicate that the back buffer will be used to present
     {
@@ -2894,7 +2812,6 @@ void render(void)
 
         commandListPost->ResourceBarrier(1, &resourceBarrierTransitionTargetPresent);
     }
-
 
 #else
 
@@ -2914,9 +2831,7 @@ void render(void)
 
         commandListPost->ResourceBarrier(1, &resourceBarrierTransitionTargetPresent);
     }
-
 #endif
-
 
     commandListPost->Close();
 
@@ -2928,7 +2843,6 @@ void render(void)
     const UINT vsync = 0;
     const UINT presentFlags = (allowTearing && !DXGI_fullscreen && vsync == 0) ? DXGI_PRESENT_ALLOW_TEARING : 0;
     //const UINT presentFlags = 0;
-
 
     // The DXGI_PRESENT_ALLOW_TEARING flag cannot be used in an application that is currently in full screen exclusive 
     // mode (set by calling SetFullscreenState(TRUE)). It can only be used in windowed mode. 
