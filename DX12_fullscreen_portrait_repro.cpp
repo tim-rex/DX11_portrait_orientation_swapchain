@@ -33,12 +33,16 @@
 #include "DX12_fullscreen_portrait_repro.h"
 
 
+#define USE_AMD_AGS 1
+#define USE_NVAPI 1
+
 #if defined _M_IX86
 #pragma comment( lib, "amd_ags_x86.lib" )
 #elif defined _M_X64
 #pragma comment( lib, "amd_ags_x64.lib" )
 #elif defined _M_ARM64
 #pragma message ("WARNING: No AMG AGS library for ARM64")
+#undef USE_AMD_AGS
 #else
 #error "No AMD AGS library for whatever architecture we're building on right now"
 #endif
@@ -49,16 +53,19 @@
 #pragma comment( lib, "nvapi64.lib" )
 #elif defined _M_ARM64
 #pragma message ("WARNING: No NVAPI library for ARM64")
+#undef USE_NVAPI
 #else
 #error "No NVAPI library for whatever architecture we're building on right now"
 #endif
 
 
-
+#if USE_NVAPI
 #include "third_party/nVidia/nvapi/nvapi.h"
+#endif
+
+#if USE_AMD_AGS
 #include "third_party/AMD/AGS_SDK/ags_lib/inc/amd_ags.h"
-
-
+#endif
 
 
 #define USE_D3D_AGILITY_SDK 1
@@ -843,7 +850,7 @@ void InitD3D12(void)
         }
 
 
-#if !defined _M_ARM64
+#if USE_NVAPI
         // nVidia driver version check
         {
             NvU32 DriverVersion;
@@ -859,7 +866,9 @@ void InitD3D12(void)
                 OutputDebugStringA(msg);
             }
         }
+#endif
 
+#if USE_AMD_AGS
         // AMD driver version check
         {
             AGSContext* ctx = nullptr;
