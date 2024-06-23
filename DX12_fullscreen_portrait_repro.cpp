@@ -16,7 +16,14 @@
 #include <dxcapi.h> // DX12 shader compiler
 
 #include <dxgidebug.h>
+
+#if defined _M_X64 || defined _M_ARM64 
 #include <pix3.h>   // Pix integration
+#elif defined _M_IX86
+// Pix seem unavailable on X86
+#else
+#error "Is Pix available on this platform?"
+#endif
 
 #include <process.h>
 #include <vector>
@@ -24,6 +31,33 @@
 #include <inttypes.h>
 
 #include "DX12_fullscreen_portrait_repro.h"
+
+
+#if defined _M_IX86
+#pragma comment( lib, "amd_ags_x86.lib" )
+#elif defined _M_X64
+#pragma comment( lib, "amd_ags_x64.lib" )
+#elif defined _M_ARM64
+#pragma message ("WARNING: No AMG AGS library for ARM64")
+#else
+#error "No AMD AGS library for whatever architecture we're building on right now"
+#endif
+
+#if defined _M_IX86
+#pragma comment( lib, "nvapi.lib" )
+#elif defined _M_X64
+#pragma comment( lib, "nvapi64.lib" )
+#elif defined _M_ARM64
+#pragma message ("WARNING: No NVAPI library for ARM64")
+#else
+#error "No NVAPI library for whatever architecture we're building on right now"
+#endif
+
+
+
+#include "third_party/nVidia/nvapi/nvapi.h"
+#include "third_party/AMD/AGS_SDK/ags_lib/inc/amd_ags.h"
+
 
 
 
@@ -642,7 +676,7 @@ void CheckFeatures(void)
 
         /*
         * Use CheckFeatureSupport to see if GPU upload heaps are supported on current device. 
-          We’ll return a struct with the following value:
+          Weï¿½ll return a struct with the following value:
 
             bool GPUUploadHeapSupported - whether GPU upload heaps are supported on current device
             GPUUploadHeapSupported is in D3D12_FEATURE_D3D12_OPTIONS16.
@@ -655,7 +689,7 @@ void CheckFeatures(void)
             {
                 GPUUploadHeapSupported = options16.GPUUploadHeapSupported;
             }
-            IDXGIAdapter3::QueryVideoMemoryInfo can be used to query the video memory budget, available CPU visible video memory size is the same as local video memory budget when the entire VRAM is CPU visible. When querying video memory budget for GPU upload heaps, MemorySegmentGroup needs to be DXGI_MEMORY_SEGMENT_GROUP_LOCAL. Then it’s developers’ responsibility to decide if they want to use GPU upload heaps. If they go over budget, we may have to fall back to system memory, which can lead to performance regression.
+            IDXGIAdapter3::QueryVideoMemoryInfo can be used to query the video memory budget, available CPU visible video memory size is the same as local video memory budget when the entire VRAM is CPU visible. When querying video memory budget for GPU upload heaps, MemorySegmentGroup needs to be DXGI_MEMORY_SEGMENT_GROUP_LOCAL. Then itï¿½s developersï¿½ responsibility to decide if they want to use GPU upload heaps. If they go over budget, we may have to fall back to system memory, which can lead to performance regression.
 
             DXGI_QUERY_VIDEO_MEMORY_INFO VMInfo;
             VERIFY_SUCCEEDED(spAdapter->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &VMInfo));
@@ -773,32 +807,103 @@ void InitD3D12(void)
     OutputDebugStringW(L"\n");
 
 
+    // Check Driver Versions
     {
-        LARGE_INTEGER UMDVersion = {};
-        result = dxgiAdapter->CheckInterfaceSupport(IID_IDXGIDevice, &UMDVersion);
+        // https://asawicki.info/news_1773_how_to_programmatically_check_graphics_driver_version
 
-        if (SUCCEEDED(result))
+
+        // Device agnostic driver version check
+        // Ref: https://asawicki.info/news_1773_how_to_programmatically_check_graphics_driver_version
         {
-            char msg[32];
-            //snprintf(msg, 32, "Driver version: %lld\n", UMDVersion.QuadPart);
-            //OutputDebugStringA(msg);
+            LARGE_INTEGER UMDVersion = {};
+            result = dxgiAdapter->CheckInterfaceSupport(IID_IDXGIDevice, &UMDVersion);
 
-            UINT major = (UMDVersion.QuadPart >> 48) & 0xFFFF;
-            UINT minor = (UMDVersion.QuadPart >> 32) & 0xFFFF;
-            UINT revision = (UMDVersion.QuadPart >> 16) & 0xFFFF;
-            UINT patch = (UMDVersion.QuadPart >> 0) & 0xFFFF;
+            if (SUCCEEDED(result))
+            {
+                char msg[64];
 
-            snprintf(msg, 32, "Driver version: %d.%d.%d.%d\n", major, minor, revision, patch);
-            OutputDebugStringA(msg);
-        }
-        else
-            OutputDebugStringA("Failed to query driver version\n");
+                UINT major = (UMDVersion.QuadPart >> 48) & 0xFFFF;
+                UINT minor = (UMDVersion.QuadPart >> 32) & 0xFFFF;
+                UINT revision = (UMDVersion.QuadPart >> 16) & 0xFFFF;
+                UINT patch = (UMDVersion.QuadPart >> 0) & 0xFFFF;
+
+                snprintf(msg, 64, "Driver version: %d.%d.%d.%d\n", major, minor, revision, patch);
+                OutputDebugStringA(msg);
+
+                // nVidia reports: 32.0.15.558
+                // AMD reports   : 31.0.21912.14
+
+            }
+            else
+                OutputDebugStringA("Failed to query driver version\n");
 
 #if USE_WARP
-        assert(UMDVersion.QuadPart == 281474977497088); // 1.0.12.0
+            assert(UMDVersion.QuadPart == 281474977497088); // 1.0.12.0
 #endif
-    }
+        }
 
+
+#if !defined _M_ARM64
+        // nVidia driver version check
+        {
+            NvU32 DriverVersion;
+            NvAPI_ShortString BuildBranchString;
+            if (NvAPI_SYS_GetDriverAndBranchVersion(&DriverVersion, BuildBranchString) == NVAPI_OK)
+            {
+
+                char msg[1024];
+                snprintf(msg, 1024, "nVidia Driver Version: %u\n", DriverVersion);
+                OutputDebugStringA(msg);
+
+                snprintf(msg, 1024, "nVidia Driver Branch String: %s\n", BuildBranchString);
+                OutputDebugStringA(msg);
+            }
+        }
+
+        // AMD driver version check
+        {
+            AGSContext* ctx = nullptr;
+            AGSGPUInfo gpu_info = {};
+            if (agsInitialize(AGS_CURRENT_VERSION, nullptr, &ctx, &gpu_info) == AGS_SUCCESS)
+            {
+                char msg[1024];
+                snprintf(msg, 1024, "AMD Driver Version: %s\n", gpu_info.driverVersion);
+                OutputDebugStringA(msg);
+
+                snprintf(msg, 1024, "Radeon Software Version: %s\n", gpu_info.radeonSoftwareVersion);
+                OutputDebugStringA(msg);
+
+                snprintf(msg, 1024, "%d Devices\n", gpu_info.numDevices);
+                OutputDebugStringA(msg);
+
+                for (int i = 0; i < gpu_info.numDevices; i++)
+                {
+                    AGSDeviceInfo* device = &gpu_info.devices[i];
+
+                    snprintf(msg, 1024, "  Adapter String: %s\n", device->adapterString);
+                    OutputDebugStringA(msg);
+
+                    // There's a bunch of other info here, may or may not be useful
+                }
+            }
+
+            // At the end, don't forget to:
+            agsDeInitialize(ctx);
+        }
+#endif
+
+        // Intel driver version check
+        {
+            // Not integrated
+            // Consider https://github.com/GameTechDev/gpudetect
+
+            // Not strictly necessary, singe the DXGI version check returns Intel driver versiosn that reflect usef facing versions (unlike nVidia/AMD)
+
+            //GPUDetect::GPUData::dxDriverVersion[i]
+        }
+
+
+    }
 
 
     {

@@ -1,0 +1,6 @@
+[submodule "third_party/AMD/AGS_SDK"]
+	path = third_party/AMD/AGS_SDK
+	url = https://github.com/GPUOpen-LibrariesAndSDKs/AGS_SDK.git
+[submodule "third_party/nVidia/nvapi"]
+	path = third_party/nVidia/nvapi
+	url = https://github.com/NVIDIA/nvapi

@@ -27,6 +27,33 @@
 #include <inttypes.h>
 
 
+#if defined _M_IX86
+#pragma comment( lib, "amd_ags_x86.lib" )
+#elif defined _M_X64
+#pragma comment( lib, "amd_ags_x64.lib" )
+#elif defined _M_ARM64
+#pragma message ("WARNING: No AMG AGS library for ARM64")
+#else
+#error "No AMD AGS library for whatever architecture we're building on right now"
+#endif
+
+#if defined _M_IX86
+#pragma comment( lib, "nvapi.lib" )
+#elif defined _M_X64
+#pragma comment( lib, "nvapi64.lib" )
+#elif defined _M_ARM64
+#pragma message ("WARNING: No NVAPI library for ARM64")
+#else
+#error "No NVAPI library for whatever architecture we're building on right now"
+#endif
+
+
+
+#include "third_party/nVidia/nvapi/nvapi.h"
+#include "third_party/AMD/AGS_SDK/ags_lib/inc/amd_ags.h"
+
+
+
 #define ARRAY_COUNT(array) \
     (sizeof(array) / (sizeof(array[0]) * (sizeof(array) != sizeof(void *) || sizeof(array[0]) <= sizeof(void *))))
 
@@ -542,6 +569,124 @@ void InitD3D11(void)
 
     OutputDebugStringW(desc.Description);
     OutputDebugStringW(L"\n");
+
+
+    // Check driver versions
+    {
+        // https://asawicki.info/news_1773_how_to_programmatically_check_graphics_driver_version
+
+
+// Device agnostic driver version check
+// Ref: https://asawicki.info/news_1773_how_to_programmatically_check_graphics_driver_version
+        {
+            LARGE_INTEGER UMDVersion = {};
+            result = dxgiAdapter->CheckInterfaceSupport(IID_IDXGIDevice, &UMDVersion);
+
+            if (SUCCEEDED(result))
+            {
+                char msg[64];
+
+                UINT major = (UMDVersion.QuadPart >> 48) & 0xFFFF;
+                UINT minor = (UMDVersion.QuadPart >> 32) & 0xFFFF;
+                UINT revision = (UMDVersion.QuadPart >> 16) & 0xFFFF;
+                UINT patch = (UMDVersion.QuadPart >> 0) & 0xFFFF;
+
+                snprintf(msg, 64, "Driver version: %d.%d.%d.%d\n", major, minor, revision, patch);
+                OutputDebugStringA(msg);
+
+                // nVidia reports: 32.0.15.558
+                // AMD reports   : 31.0.21912.14
+
+            }
+            else
+                OutputDebugStringA("Failed to query driver version\n");
+
+#if USE_WARP
+            assert(UMDVersion.QuadPart == 281474977497088); // 1.0.12.0
+#endif
+        }
+
+
+#if !defined _M_ARM64
+        // nVidia driver version check
+        {
+            NvU32 DriverVersion;
+            NvAPI_ShortString BuildBranchString;
+            if (NvAPI_SYS_GetDriverAndBranchVersion(&DriverVersion, BuildBranchString) == NVAPI_OK)
+            {
+
+                char msg[1024];
+                snprintf(msg, 1024, "nVidia Driver Version: %u\n", DriverVersion);
+                OutputDebugStringA(msg);
+
+                snprintf(msg, 1024, "nVidia Driver Branch String: %s\n", BuildBranchString);
+                OutputDebugStringA(msg);
+            }
+        }
+
+        // AMD driver version check
+        {
+            AGSContext* ctx = nullptr;
+            AGSGPUInfo gpu_info = {};
+            if (agsInitialize(AGS_CURRENT_VERSION, nullptr, &ctx, &gpu_info) == AGS_SUCCESS)
+            {
+                char msg[1024];
+                snprintf(msg, 1024, "AMD Driver Version: %s\n", gpu_info.driverVersion);
+                OutputDebugStringA(msg);
+
+                snprintf(msg, 1024, "Radeon Software Version: %s\n", gpu_info.radeonSoftwareVersion);
+                OutputDebugStringA(msg);
+
+                snprintf(msg, 1024, "%d Devices\n", gpu_info.numDevices);
+                OutputDebugStringA(msg);
+
+                for (int i = 0; i < gpu_info.numDevices; i++)
+                {
+                    AGSDeviceInfo* device = &gpu_info.devices[i];
+
+                    snprintf(msg, 1024, "  Adapter String: %s\n", device->adapterString);
+                    OutputDebugStringA(msg);
+
+                    // There's a bunch of other info here, may or may not be useful
+                }
+            }
+
+            // At the end, don't forget to:
+            agsDeInitialize(ctx);
+        }
+#endif
+
+        // Intel driver version check
+        {
+            // Not integrated
+            // Consider https://github.com/GameTechDev/gpudetect
+
+            // Not strictly necessary, singe the DXGI version check returns Intel driver versiosn that reflect usef facing versions (unlike nVidia/AMD)
+
+            //GPUDetect::GPUData::dxDriverVersion[i]
+        }
+    }
+
+
+
+
+    DXGI_QUERY_VIDEO_MEMORY_INFO VMInfo;
+    if SUCCEEDED(dxgiAdapter->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &VMInfo))
+    {
+        char msg[1024];
+        snprintf(msg, 1024, "Video Memory Info (MB)\n Budget: %" PRIu64 "\n CurrentUsage : %" PRIu64 "\n AvailableForReservation % " PRIu64 "\n CurrentReservation : %" PRIu64 "\n",
+            VMInfo.Budget / 1024 / 1024,
+            VMInfo.CurrentUsage / 1024 / 1024,
+            VMInfo.AvailableForReservation / 1024 / 1024,
+            VMInfo.CurrentReservation / 1024 / 1024);
+        OutputDebugStringA(msg);
+    }
+    else
+    {
+        OutputDebugStringA("Failed to QueryVideoMemoryInfo");
+    }
+
+
 
 
     dxgi_debug_init();
