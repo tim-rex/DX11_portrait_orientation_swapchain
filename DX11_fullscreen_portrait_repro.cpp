@@ -190,7 +190,7 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
 HWND hWnd;
 ID3D11Device5* device = nullptr;
 ID3D11DeviceContext4* device_context_11_x = nullptr;
-IDXGISwapChain1* swapchain = nullptr;
+IDXGISwapChain4* swapchain = nullptr;
 ID3D11RenderTargetView* render_target_view = nullptr;
 ID3D11RenderTargetView* msaa_render_target_view = nullptr;
 
@@ -994,13 +994,24 @@ void InitD3D11(void)
         };
 
 
-        result = pFactory->CreateSwapChainForHwnd(device, hWnd, &swapchain_descriptor, &fullscreen_desc, nullptr, &swapchain);
+        IDXGISwapChain1* _swapchain;
+
+        result = pFactory->CreateSwapChainForHwnd(device, hWnd, &swapchain_descriptor, &fullscreen_desc, nullptr, &_swapchain);
 
         if (FAILED(result))
         {
             debug_printf("Failed to CreateSwapChainForHwnd from dxgiFactory\n");
             exit(EXIT_FAILURE);
         }
+
+        result = _swapchain->QueryInterface(IID_PPV_ARGS(&swapchain));
+
+        if (FAILED(result))
+        {
+            debug_printf("Failed to promote IDXGISwapChain1 to IDXGISwapChain4\n");
+            exit(EXIT_FAILURE);
+        }
+
 
 
         // Uncomment to prevent Alt+Enter from triggering a fullscreen switch

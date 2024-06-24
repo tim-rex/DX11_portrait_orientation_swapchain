@@ -211,22 +211,10 @@ HWND hWnd;
 // The latest version of this interface is ID3D12Device3 introduced in Windows 10 Fall Creators Update.
 
 
-//ID3D12Device10* device10 = nullptr;
-//ID3D12Device9* device = nullptr;
-ID3D12Device8* device = nullptr;    // Works on Windows 10, despite documentation note above
-//ID3D12Device7* device = nullptr;
-//ID3D12Device6* device = nullptr;
-//ID3D12Device5* device = nullptr;
+ID3D12Device14* device = nullptr;   // Work graphs
+//ID3D12Device8* device = nullptr;    // Works on Windows 10, despite documentation note above
 //ID3D12Device4* device = nullptr;       // CreateCommandList1
-//ID3D12Device3* device = nullptr;
-//ID3D12Device2* device = nullptr;
-//ID3D12Device1* device = nullptr;
 
-//ID3D12Device* device = nullptr;
-// 
-//ID3D12Resource2* resource2 = nullptr;
-
-//IDXGISwapChain1* swapchain = nullptr;
 IDXGISwapChain4* swapchain4 = nullptr;
 
 
@@ -261,13 +249,7 @@ void dxgi_debug_pre_device_init()
     //assert(device);
 
 #ifndef NDEBUG
-    //ID3D12Debug6* debugController;
-    //ID3D12Debug5* debugController;
-    //ID3D12Debug4* debugController;
-    ID3D12Debug3* debugController;
-    //ID3D12Debug2* debugController;
-    //ID3D12Debug1* debugController;
-    //ID3D12Debug* debugController;
+    ID3D12Debug6* debugController;
     
     // Enable the debug layer
     {
@@ -316,15 +298,15 @@ void dxgi_debug_post_device_init()
             assert(info);
 
 #if 0
-            ID3D12InfoQueue1*info1;
-            hr = info->QueryInterface(IID_PPV_ARGS(&info1));
+            ID3D12InfoQueue1 *info;
+            hr = _info->QueryInterface(IID_PPV_ARGS(&info));
 
             if (FAILED(hr))
             {
                 debug_printf("Failed to query interface for ID3D12InfoQueue1 from ID3D12InfoQueue");
                 exit(EXIT_FAILURE);
             }
-            assert(info1);
+            assert(info);
 #endif
 
 
@@ -468,7 +450,7 @@ struct ThreadParameter
 {
     int threadIndex;
     ID3D12CommandAllocator* commandAllocator[backbufferFrames] = {};
-    ID3D12GraphicsCommandList1* commandList = nullptr;
+    ID3D12GraphicsCommandList10* commandList = nullptr;
 };
 
 ThreadParameter m_threadParameters[numThreads];
@@ -575,8 +557,8 @@ ID3D12Resource* constantBuffer[numCBVHandles] = {};
 #endif
 
 
-ID3D12GraphicsCommandList1* commandListPre = nullptr;
-ID3D12GraphicsCommandList1* commandListPost = nullptr;
+ID3D12GraphicsCommandList10* commandListPre = nullptr;
+ID3D12GraphicsCommandList10* commandListPost = nullptr;
 
 ID3D12RootSignature* rootSig = nullptr;
 ID3D12PipelineState* pso = nullptr;
@@ -817,11 +799,21 @@ void InitD3D12(void)
 
 #endif
 
-    result = D3D12CreateDevice(dxgiAdapter, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&device) );
+
+    ID3D12Device3 *device3; // Supported on Windows 10 as of Fall Creators Update
+    result = D3D12CreateDevice(dxgiAdapter, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&device3));
 
     if (FAILED(result))
     {
-        debug_printf("Failed D3D12CreateDevice\n");
+        debug_printf("Failed D3D12CreateDevice against ID3D12Device3\n");
+        exit(EXIT_FAILURE);
+    }
+
+    result = device3->QueryInterface(IID_PPV_ARGS(&device));
+
+    if (FAILED(result))
+    {
+        debug_printf("Failed to QueryInterface for ID3D12Device10 from ID3D12Device3\n");
         exit(EXIT_FAILURE);
     }
     device->SetName(L"device");
@@ -1275,7 +1267,7 @@ void InitD3D12(void)
         result = swapchain1->QueryInterface(IID_PPV_ARGS(&swapchain4));
         if (FAILED(result))
         {
-            debug_printf("Failed to query for IDXGISwapChain4 from IDXGISwapChain1\n");
+            debug_printf("Failed to promote IDXGISwapChain1 to IDXGISwapChain4\n");
             exit(EXIT_FAILURE);
         }
 
@@ -2381,7 +2373,7 @@ float time_lerp(void)
 }
 
 
-void DrawLotsUnoptimised(ID3D12GraphicsCommandList1* cmdList, UINT threadIndex, UINT numThreads)
+void DrawLotsUnoptimised(ID3D12GraphicsCommandList10* cmdList, UINT threadIndex, UINT numThreads)
 {
     assert(threadIndex < numThreads);
     // We'll split this into numThreads batches and operate solely on the threadIndex batch for this iteration
@@ -2436,8 +2428,8 @@ void DrawLotsUnoptimised(ID3D12GraphicsCommandList1* cmdList, UINT threadIndex, 
 }
 
 
-void InitCommandListForDraw(ID3D12GraphicsCommandList*);
-void PopulateCommandList(ID3D12GraphicsCommandList*);
+void InitCommandListForDraw(ID3D12GraphicsCommandList10*);
+void PopulateCommandList(ID3D12GraphicsCommandList10*);
 
 
 void render(void)
@@ -2860,7 +2852,7 @@ void render(void)
 
 
 
-void InitCommandListForDraw(ID3D12GraphicsCommandList* commandList)
+void InitCommandListForDraw(ID3D12GraphicsCommandList10* commandList)
 {
     // We need to define state for individual command lists
 
@@ -2915,7 +2907,7 @@ void InitCommandListForDraw(ID3D12GraphicsCommandList* commandList)
     */
 }
 
-void PopulateCommandList(ID3D12GraphicsCommandList *commandList)
+void PopulateCommandList(ID3D12GraphicsCommandList10 *commandList)
 {
     // Draw something, we don't use vertex buffers - all the magic happens in the vertex shader
     commandList->DrawInstanced(21, 1, 0, 0);
