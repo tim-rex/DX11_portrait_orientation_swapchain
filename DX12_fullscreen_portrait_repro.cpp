@@ -405,6 +405,13 @@ void dxgi_debug_post_device_init()
 #define LOAD_PRE_COMPILED_SHADER 1
 
 
+#if defined(DEBUG) || defined(_DEBUG)
+#define USE_STABLE_POWER_STATE 1
+#else
+#define USE_STABLE_POWER_STATE 0
+#endif
+
+
 bool GPUUploadHeapSupported = false; // Requires Agility SDK
 bool ManualWriteTrackingResourceSupported = false;  // Pix to more easily track resources when using GPU_UPLOAD heap
 
@@ -925,6 +932,15 @@ void InitD3D12(void)
         }
     }
 
+#if USE_STABLE_POWER_STATE
+#pragma message ("WARNING: SetStablePowerState(TRUE)")
+
+    // This is used purely for comparing performance metrics during debug sessions
+    // This *will* enforce a more predictable lower power state, one that does not 
+    // codshift gears into higher power states
+
+    device->SetStablePowerState(TRUE);
+#endif
 
     {
         debug_printf("Node count == %d\n", device->GetNodeCount());
