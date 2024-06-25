@@ -80,6 +80,7 @@ extern "C" { __declspec(dllexport) extern const UINT D3D12SDKVersion = D3D12_SDK
 extern "C" { __declspec(dllexport) extern const char* D3D12SDKPath = ".\\D3D12\\"; }
 #endif
 
+static_assert(D3D12_SDK_VERSION == 614);
 
 #define ARRAY_COUNT(array) \
     (sizeof(array) / (sizeof(array[0]) * (sizeof(array) != sizeof(void *) || sizeof(array[0]) <= sizeof(void *))))
