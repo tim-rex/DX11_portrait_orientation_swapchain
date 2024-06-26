@@ -38,57 +38,7 @@ vs_out vs_main(vs_in input)
     // TODO: What's the correct zero initialiser for hlsl 202x ?  {} and {0} do not work
     vs_out output = (vs_out) 0; // zero the memory first
 
-    // Center triangle
-
-    if (input.vertexId == 0)
-        output.pos = float4(0.5, -0.5, 0.5, 1.0);
-    else if (input.vertexId == 1)
-        output.pos = float4(-0.5, -0.5, 0.5, 1.0);
-    else if (input.vertexId == 2)
-        output.pos = float4(0.0, 0.5, 0.5, 1.0);
-
-
-    // Top Left triangle
-
-    if (input.vertexId == 3)
-        output.pos = float4(-0.9, 0.9, 0.5, 1.0);
-    else if (input.vertexId == 4)
-        output.pos = float4(-0.8, 0.9, 0.5, 1.0);
-    else if (input.vertexId == 5)
-        output.pos = float4(-0.9, 0.8, 0.5, 1.0);
-
-
-    // Top Right triangle
-
-    if (input.vertexId == 6)
-        output.pos = float4(0.9, 0.9, 0.5, 1.0);
-    else if (input.vertexId == 7)
-        output.pos = float4(0.9, 0.8, 0.5, 1.0);
-    else if (input.vertexId == 8)
-        output.pos = float4(0.8, 0.9, 0.5, 1.0);
-
-
-    // Bottom Left triangle
-
-    if (input.vertexId == 9)
-        output.pos = float4(-0.9, -0.8, 0.5, 1.0);
-    else if (input.vertexId == 10)
-        output.pos = float4(-0.8, -0.9, 0.5, 1.0);
-    else if (input.vertexId == 11)
-        output.pos = float4(-0.9, -0.9, 0.5, 1.0);
-
-
-    // Bottom Right triangle
-
-    if (input.vertexId == 12)
-        output.pos = float4(0.9, -0.8, 0.5, 1.0);
-    else if (input.vertexId == 13)
-        output.pos = float4(0.9, -0.9, 0.5, 1.0);
-    else if (input.vertexId == 14)
-        output.pos = float4(0.8, -0.9, 0.5, 1.0);
-
-
-    // Now, using the frame dimensions, a solitary fixed dimension square 100x100 in the middle of the screen
+    // Using the frame dimensions, a solitary fixed dimension square 100x100 in the middle of the screen
     // The pixel dimensions need to be scaled against the NDC space
 
     float2 center = float2(width / 2, height / 2);
@@ -98,23 +48,48 @@ vs_out vs_main(vs_in input)
 
     float2 bottomleft = pixelCoordToNCD(center + float2(-50, -50));
     float2 bottomright = pixelCoordToNCD(center + float2(+50, -50));
-          
-    if (input.vertexId == 15)
-        output.pos = float4(topleft, 0.5, 1.0);
-    else if (input.vertexId == 16)
-        output.pos = float4(topright, 0.5, 1.0);
-    else if (input.vertexId == 17)
-        output.pos = float4(bottomleft, 0.5, 1.0);
-    else if (input.vertexId == 18)
-        output.pos = float4(topright, 0.5, 1.0);
-    else if (input.vertexId == 19)
-        output.pos = float4(bottomright, 0.5, 1.0);
-    else if (input.vertexId == 20)
-        output.pos = float4(bottomleft, 0.5, 1.0);
 
+    
+    // Vertex lookup per instanceId
+    float4 vertexData[] =
+    {
+        // Center triangle
+        float4(0.5, -0.5, 0.5, 1.0),
+        float4(-0.5, -0.5, 0.5, 1.0),
+        float4(0.0, 0.5, 0.5, 1.0),
+        
+        // Top Left triangle
+        float4(-0.9, 0.9, 0.5, 1.0),
+        float4(-0.8, 0.9, 0.5, 1.0),
+        float4(-0.9, 0.8, 0.5, 1.0),
+        
+        // Top Right triangle
+        float4(0.9, 0.9, 0.5, 1.0),
+        float4(0.9, 0.8, 0.5, 1.0),
+        float4(0.8, 0.9, 0.5, 1.0),
+        
+        // Bottom Left triangle
+        float4(-0.9, -0.8, 0.5, 1.0),
+        float4(-0.8, -0.9, 0.5, 1.0),
+        float4(-0.9, -0.9, 0.5, 1.0),
+        
+        // Bottom Right triangle
+        float4(0.9, -0.8, 0.5, 1.0),
+        float4(0.9, -0.9, 0.5, 1.0),
+        float4(0.8, -0.9, 0.5, 1.0),
+        
+        // Centre Square
+        float4(topleft, 0.5, 1.0),
+        float4(topright, 0.5, 1.0),
+        float4(bottomleft, 0.5, 1.0),
+        float4(topright, 0.5, 1.0),
+        float4(bottomright, 0.5, 1.0),
+        float4(bottomleft, 0.5, 1.0)
+    };
+    
+    output.pos = vertexData[input.vertexId];
        
     if (input.vertexId >= 15)
-                //output.colour = float4(1.0, 1.0, 0.0, 1.0);
         output.colour = float4(1.0, 1.0, time, 1.0);
     else
         output.colour = clamp(output.pos, 0, 1);
