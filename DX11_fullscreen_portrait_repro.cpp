@@ -15,7 +15,7 @@
 #include "DX11_fullscreen_portrait_repro.h"
 
 #include <d3d11.h>       // D3D interface
-#include <d3d11_1.h>     // D3D 11.1 extensions    TODO: Should we use 1_4 ? 1_5? 1_6?
+//#include <d3d11_1.h>     // D3D 11.1 extensions    TODO: Should we use 1_4 ? 1_5? 1_6?
 #include <d3d11_4.h>     // ID3D11Device5
 #include <dxgi1_6.h>     // CheckHardwareCompositionSupport
 
@@ -1786,7 +1786,7 @@ void render(void)
 
 
 
-    const UINT vsync = 0;
+    const UINT vsync = 1;
     //const UINT presentFlags = allowTearing ? DXGI_PRESENT_ALLOW_TEARING : 0;
     const UINT presentFlags = (allowTearing && !DXGI_fullscreen && vsync == 0) ? DXGI_PRESENT_ALLOW_TEARING : 0;
 

@@ -394,10 +394,10 @@ void dxgi_debug_post_device_init()
 }
 
 
-#define USE_WARP 1
+#define USE_WARP 0
 
 #define USE_GPU_UPLOAD_HEAP 1  // TODO: Test performance delta (if any)
-#define MSAA_ENABLED 1
+#define MSAA_ENABLED 0
 #define ROOT_CONSTANTS_ENABLED 0
 #define DRAW_LOTS_UNOPTIMISED 0
 #define DRAW_LOTS_OPTIMISED 1
@@ -441,8 +441,8 @@ bool ManualWriteTrackingResourceSupported = false;  // Pix to more easily track 
 //       This would require using the UPLOAD heap and then COPY into the DEFAULT heap with appropriate resource synchronisation
 //       This is likely what our D3D11 equivalent is doing every time we map/unmap()
 
-const int viewports_x = 10;
-const int viewports_y = 10;
+const int viewports_x = 100;
+const int viewports_y = 100;
 
 
 #define RENDER_THREADS 4
@@ -2849,7 +2849,7 @@ void render(void)
         commandQueue->ExecuteCommandLists(ARRAY_COUNT(ppCommandLists), ppCommandLists);
     }
 
-    const UINT vsync = 0;
+    const UINT vsync = 1;
     const UINT presentFlags = (allowTearing && !DXGI_fullscreen && vsync == 0) ? DXGI_PRESENT_ALLOW_TEARING : 0;
     //const UINT presentFlags = 0;
 
